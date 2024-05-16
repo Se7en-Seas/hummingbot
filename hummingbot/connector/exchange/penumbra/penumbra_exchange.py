@@ -9,11 +9,11 @@ from hummingbot.connector.exchange.penumbra.penumbra_api_user_stream_data_source
 from hummingbot.connector.exchange.penumbra.penumbra_constants import EXCHANGE_NAME, RATE_LIMITS
 from hummingbot.connector.exchange.penumbra.penumbra_utils import build_api_factory
 from hummingbot.connector.exchange_py_base import ExchangePyBase
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1alpha1.view_pb2 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1.view_pb2 import (
     _builder as ViewBuilder,
 )
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1alpha1.view_pb2_grpc import (
-    ViewProtocolServiceStub as ViewProtocolServiceClient,
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1.view_pb2_grpc import (
+    ViewServiceStub as ViewProtocolServiceClient,
 )
 from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.penumbra_api_data_source import (
     PenumbraAPIDataSource as PenumbraGateway,

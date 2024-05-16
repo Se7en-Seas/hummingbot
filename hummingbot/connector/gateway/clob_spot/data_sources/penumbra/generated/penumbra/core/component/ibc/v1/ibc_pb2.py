@@ -15,10 +15,19 @@ _sym_db = _symbol_database.Default()
 
 
 from google.protobuf import any_pb2 as google_dot_protobuf_dot_any__pb2
-from ibc.core.client.v1 import client_pb2 as ibc_dot_core_dot_client_dot_v1_dot_client__pb2
-from penumbra.core.asset.v1 import asset_pb2 as penumbra_dot_core_dot_asset_dot_v1_dot_asset__pb2
-from penumbra.core.keys.v1 import keys_pb2 as penumbra_dot_core_dot_keys_dot_v1_dot_keys__pb2
-from penumbra.core.num.v1 import num_pb2 as penumbra_dot_core_dot_num_dot_v1_dot_num__pb2
+
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.ibc.core.client.v1 import (
+    client_pb2 as ibc_dot_core_dot_client_dot_v1_dot_client__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.asset.v1 import (
+    asset_pb2 as penumbra_dot_core_dot_asset_dot_v1_dot_asset__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.keys.v1 import (
+    keys_pb2 as penumbra_dot_core_dot_keys_dot_v1_dot_keys__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.num.v1 import (
+    num_pb2 as penumbra_dot_core_dot_num_dot_v1_dot_num__pb2,
+)
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n(penumbra/core/component/ibc/v1/ibc.proto\x12\x1epenumbra.core.component.ibc.v1\x1a\x19google/protobuf/any.proto\x1a\x1fibc/core/client/v1/client.proto\x1a\"penumbra/core/asset/v1/asset.proto\x1a penumbra/core/keys/v1/keys.proto\x1a\x1epenumbra/core/num/v1/num.proto\"4\n\x08IbcRelay\x12(\n\nraw_action\x18\x01 \x01(\x0b\x32\x14.google.protobuf.Any\"h\n\x17\x46ungibleTokenPacketData\x12\r\n\x05\x64\x65nom\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\t\x12\x0e\n\x06sender\x18\x03 \x01(\t\x12\x10\n\x08receiver\x18\x04 \x01(\t\x12\x0c\n\x04memo\x18\x05 \x01(\t\"\xaa\x02\n\x0fIcs20Withdrawal\x12,\n\x06\x61mount\x18\x01 \x01(\x0b\x32\x1c.penumbra.core.num.v1.Amount\x12,\n\x05\x64\x65nom\x18\x02 \x01(\x0b\x32\x1d.penumbra.core.asset.v1.Denom\x12!\n\x19\x64\x65stination_chain_address\x18\x03 \x01(\t\x12\x36\n\x0ereturn_address\x18\x04 \x01(\x0b\x32\x1e.penumbra.core.keys.v1.Address\x12\x32\n\x0etimeout_height\x18\x05 \x01(\x0b\x32\x1a.ibc.core.client.v1.Height\x12\x14\n\x0ctimeout_time\x18\x06 \x01(\x04\x12\x16\n\x0esource_channel\x18\x07 \x01(\t\"}\n\nClientData\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12*\n\x0c\x63lient_state\x18\x02 \x01(\x0b\x32\x14.google.protobuf.Any\x12\x16\n\x0eprocessed_time\x18\x03 \x01(\t\x12\x18\n\x10processed_height\x18\x04 \x01(\x04\" \n\rClientCounter\x12\x0f\n\x07\x63ounter\x18\x01 \x01(\x04\"?\n\x0e\x43onsensusState\x12-\n\x0f\x63onsensus_state\x18\x01 \x01(\x0b\x32\x14.google.protobuf.Any\">\n\x0fVerifiedHeights\x12+\n\x07heights\x18\x01 \x03(\x0b\x32\x1a.ibc.core.client.v1.Height\"$\n\x11\x43onnectionCounter\x12\x0f\n\x07\x63ounter\x18\x01 \x01(\x04\"(\n\x11\x43lientConnections\x12\x13\n\x0b\x63onnections\x18\x01 \x03(\t\"w\n\rIbcParameters\x12\x13\n\x0bibc_enabled\x18\x01 \x01(\x08\x12\'\n\x1finbound_ics20_transfers_enabled\x18\x02 \x01(\x08\x12(\n outbound_ics20_transfers_enabled\x18\x03 \x01(\x08\"S\n\x0eGenesisContent\x12\x41\n\nibc_params\x18\x01 \x01(\x0b\x32-.penumbra.core.component.ibc.v1.IbcParametersb\x06proto3')
 

@@ -14,8 +14,12 @@ from google.protobuf.internal import builder as _builder
 _sym_db = _symbol_database.Default()
 
 
-from penumbra.core.asset.v1 import asset_pb2 as penumbra_dot_core_dot_asset_dot_v1_dot_asset__pb2
-from penumbra.core.num.v1 import num_pb2 as penumbra_dot_core_dot_num_dot_v1_dot_num__pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.asset.v1 import (
+    asset_pb2 as penumbra_dot_core_dot_asset_dot_v1_dot_asset__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.num.v1 import (
+    num_pb2 as penumbra_dot_core_dot_num_dot_v1_dot_num__pb2,
+)
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n(penumbra/core/component/fee/v1/fee.proto\x12\x1epenumbra.core.component.fee.v1\x1a\"penumbra/core/asset/v1/asset.proto\x1a\x1epenumbra/core/num/v1/num.proto\"f\n\x03\x46\x65\x65\x12,\n\x06\x61mount\x18\x01 \x01(\x0b\x32\x1c.penumbra.core.num.v1.Amount\x12\x31\n\x08\x61sset_id\x18\x02 \x01(\x0b\x32\x1f.penumbra.core.asset.v1.AssetId\"\xb1\x01\n\tGasPrices\x12\x31\n\x08\x61sset_id\x18\x0f \x01(\x0b\x32\x1f.penumbra.core.asset.v1.AssetId\x12\x19\n\x11\x62lock_space_price\x18\x01 \x01(\x04\x12!\n\x19\x63ompact_block_space_price\x18\x02 \x01(\x04\x12\x1a\n\x12verification_price\x18\x03 \x01(\x04\x12\x17\n\x0f\x65xecution_price\x18\x04 \x01(\x04\"\x95\x01\n\x07\x46\x65\x65Tier\x12>\n\x08\x66\x65\x65_tier\x18\x01 \x01(\x0e\x32,.penumbra.core.component.fee.v1.FeeTier.Tier\"J\n\x04Tier\x12\x14\n\x10TIER_UNSPECIFIED\x10\x00\x12\x0c\n\x08TIER_LOW\x10\x01\x12\x0f\n\x0bTIER_MEDIUM\x10\x02\x12\r\n\tTIER_HIGH\x10\x03\"\x9d\x01\n\rFeeParameters\x12\x43\n\x10\x66ixed_gas_prices\x18\x01 \x01(\x0b\x32).penumbra.core.component.fee.v1.GasPrices\x12G\n\x14\x66ixed_alt_gas_prices\x18\x02 \x03(\x0b\x32).penumbra.core.component.fee.v1.GasPrices\"S\n\x0eGenesisContent\x12\x41\n\nfee_params\x18\x01 \x01(\x0b\x32-.penumbra.core.component.fee.v1.FeeParameters\"\x19\n\x17\x43urrentGasPricesRequest\"\x9c\x01\n\x18\x43urrentGasPricesResponse\x12=\n\ngas_prices\x18\x01 \x01(\x0b\x32).penumbra.core.component.fee.v1.GasPrices\x12\x41\n\x0e\x61lt_gas_prices\x18\x02 \x03(\x0b\x32).penumbra.core.component.fee.v1.GasPrices2\x96\x01\n\x0cQueryService\x12\x85\x01\n\x10\x43urrentGasPrices\x12\x37.penumbra.core.component.fee.v1.CurrentGasPricesRequest\x1a\x38.penumbra.core.component.fee.v1.CurrentGasPricesResponseb\x06proto3')
 

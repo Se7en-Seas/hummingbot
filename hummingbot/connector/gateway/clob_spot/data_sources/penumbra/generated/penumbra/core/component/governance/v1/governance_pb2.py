@@ -15,32 +15,47 @@ _sym_db = _symbol_database.Default()
 
 
 from google.protobuf import any_pb2 as google_dot_protobuf_dot_any__pb2
-from penumbra.core.asset.v1 import asset_pb2 as penumbra_dot_core_dot_asset_dot_v1_dot_asset__pb2
-from penumbra.core.component.auction.v1 import (
+
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.asset.v1 import (
+    asset_pb2 as penumbra_dot_core_dot_asset_dot_v1_dot_asset__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.auction.v1 import (
     auction_pb2 as penumbra_dot_core_dot_component_dot_auction_dot_v1_dot_auction__pb2,
 )
-from penumbra.core.component.community_pool.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.community_pool.v1 import (
     community_pool_pb2 as penumbra_dot_core_dot_component_dot_community__pool_dot_v1_dot_community__pool__pb2,
 )
-from penumbra.core.component.dex.v1 import dex_pb2 as penumbra_dot_core_dot_component_dot_dex_dot_v1_dot_dex__pb2
-from penumbra.core.component.distributions.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1 import (
+    dex_pb2 as penumbra_dot_core_dot_component_dot_dex_dot_v1_dot_dex__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.distributions.v1 import (
     distributions_pb2 as penumbra_dot_core_dot_component_dot_distributions_dot_v1_dot_distributions__pb2,
 )
-from penumbra.core.component.fee.v1 import fee_pb2 as penumbra_dot_core_dot_component_dot_fee_dot_v1_dot_fee__pb2
-from penumbra.core.component.funding.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.fee.v1 import (
+    fee_pb2 as penumbra_dot_core_dot_component_dot_fee_dot_v1_dot_fee__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.funding.v1 import (
     funding_pb2 as penumbra_dot_core_dot_component_dot_funding_dot_v1_dot_funding__pb2,
 )
-from penumbra.core.component.ibc.v1 import ibc_pb2 as penumbra_dot_core_dot_component_dot_ibc_dot_v1_dot_ibc__pb2
-from penumbra.core.component.sct.v1 import sct_pb2 as penumbra_dot_core_dot_component_dot_sct_dot_v1_dot_sct__pb2
-from penumbra.core.component.shielded_pool.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.ibc.v1 import (
+    ibc_pb2 as penumbra_dot_core_dot_component_dot_ibc_dot_v1_dot_ibc__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.sct.v1 import (
+    sct_pb2 as penumbra_dot_core_dot_component_dot_sct_dot_v1_dot_sct__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.shielded_pool.v1 import (
     shielded_pool_pb2 as penumbra_dot_core_dot_component_dot_shielded__pool_dot_v1_dot_shielded__pool__pb2,
 )
-from penumbra.core.component.stake.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.stake.v1 import (
     stake_pb2 as penumbra_dot_core_dot_component_dot_stake_dot_v1_dot_stake__pb2,
 )
-from penumbra.core.keys.v1 import keys_pb2 as penumbra_dot_core_dot_keys_dot_v1_dot_keys__pb2
-from penumbra.core.num.v1 import num_pb2 as penumbra_dot_core_dot_num_dot_v1_dot_num__pb2
-from penumbra.crypto.decaf377_rdsa.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.keys.v1 import (
+    keys_pb2 as penumbra_dot_core_dot_keys_dot_v1_dot_keys__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.num.v1 import (
+    num_pb2 as penumbra_dot_core_dot_num_dot_v1_dot_num__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.crypto.decaf377_rdsa.v1 import (
     decaf377_rdsa_pb2 as penumbra_dot_crypto_dot_decaf377__rdsa_dot_v1_dot_decaf377__rdsa__pb2,
 )
 

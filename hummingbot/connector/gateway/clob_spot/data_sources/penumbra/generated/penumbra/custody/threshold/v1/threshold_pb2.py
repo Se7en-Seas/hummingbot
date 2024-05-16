@@ -14,16 +14,16 @@ from google.protobuf.internal import builder as _builder
 _sym_db = _symbol_database.Default()
 
 
-from penumbra.core.component.governance.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.governance.v1 import (
     governance_pb2 as penumbra_dot_core_dot_component_dot_governance_dot_v1_dot_governance__pb2,
 )
-from penumbra.core.component.stake.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.stake.v1 import (
     stake_pb2 as penumbra_dot_core_dot_component_dot_stake_dot_v1_dot_stake__pb2,
 )
-from penumbra.core.transaction.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.transaction.v1 import (
     transaction_pb2 as penumbra_dot_core_dot_transaction_dot_v1_dot_transaction__pb2,
 )
-from penumbra.crypto.decaf377_frost.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.crypto.decaf377_frost.v1 import (
     decaf377_frost_pb2 as penumbra_dot_crypto_dot_decaf377__frost_dot_v1_dot_decaf377__frost__pb2,
 )
 

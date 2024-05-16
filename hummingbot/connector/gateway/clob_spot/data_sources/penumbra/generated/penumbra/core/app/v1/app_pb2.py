@@ -14,32 +14,40 @@ from google.protobuf.internal import builder as _builder
 _sym_db = _symbol_database.Default()
 
 
-from penumbra.core.component.auction.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.auction.v1 import (
     auction_pb2 as penumbra_dot_core_dot_component_dot_auction_dot_v1_dot_auction__pb2,
 )
-from penumbra.core.component.community_pool.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.community_pool.v1 import (
     community_pool_pb2 as penumbra_dot_core_dot_component_dot_community__pool_dot_v1_dot_community__pool__pb2,
 )
-from penumbra.core.component.dex.v1 import dex_pb2 as penumbra_dot_core_dot_component_dot_dex_dot_v1_dot_dex__pb2
-from penumbra.core.component.distributions.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1 import (
+    dex_pb2 as penumbra_dot_core_dot_component_dot_dex_dot_v1_dot_dex__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.distributions.v1 import (
     distributions_pb2 as penumbra_dot_core_dot_component_dot_distributions_dot_v1_dot_distributions__pb2,
 )
-from penumbra.core.component.fee.v1 import fee_pb2 as penumbra_dot_core_dot_component_dot_fee_dot_v1_dot_fee__pb2
-from penumbra.core.component.funding.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.fee.v1 import (
+    fee_pb2 as penumbra_dot_core_dot_component_dot_fee_dot_v1_dot_fee__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.funding.v1 import (
     funding_pb2 as penumbra_dot_core_dot_component_dot_funding_dot_v1_dot_funding__pb2,
 )
-from penumbra.core.component.governance.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.governance.v1 import (
     governance_pb2 as penumbra_dot_core_dot_component_dot_governance_dot_v1_dot_governance__pb2,
 )
-from penumbra.core.component.ibc.v1 import ibc_pb2 as penumbra_dot_core_dot_component_dot_ibc_dot_v1_dot_ibc__pb2
-from penumbra.core.component.sct.v1 import sct_pb2 as penumbra_dot_core_dot_component_dot_sct_dot_v1_dot_sct__pb2
-from penumbra.core.component.shielded_pool.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.ibc.v1 import (
+    ibc_pb2 as penumbra_dot_core_dot_component_dot_ibc_dot_v1_dot_ibc__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.sct.v1 import (
+    sct_pb2 as penumbra_dot_core_dot_component_dot_sct_dot_v1_dot_sct__pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.shielded_pool.v1 import (
     shielded_pool_pb2 as penumbra_dot_core_dot_component_dot_shielded__pool_dot_v1_dot_shielded__pool__pb2,
 )
-from penumbra.core.component.stake.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.stake.v1 import (
     stake_pb2 as penumbra_dot_core_dot_component_dot_stake_dot_v1_dot_stake__pb2,
 )
-from penumbra.core.transaction.v1 import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.transaction.v1 import (
     transaction_pb2 as penumbra_dot_core_dot_transaction_dot_v1_dot_transaction__pb2,
 )
 

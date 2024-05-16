@@ -14,7 +14,9 @@ from google.protobuf.internal import builder as _builder
 _sym_db = _symbol_database.Default()
 
 
-from ibc.core.commitment.v1 import commitment_pb2 as ibc_dot_core_dot_commitment_dot_v1_dot_commitment__pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.ibc.core.commitment.v1 import (
+    commitment_pb2 as ibc_dot_core_dot_commitment_dot_v1_dot_commitment__pb2,
+)
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n%penumbra/cnidarium/v1/cnidarium.proto\x12\x15penumbra.cnidarium.v1\x1a\'ibc/core/commitment/v1/commitment.proto\"-\n\x0fKeyValueRequest\x12\x0b\n\x03key\x18\x02 \x01(\t\x12\r\n\x05proof\x18\x03 \x01(\x08\"\x9c\x01\n\x10KeyValueResponse\x12<\n\x05value\x18\x01 \x01(\x0b\x32-.penumbra.cnidarium.v1.KeyValueResponse.Value\x12\x32\n\x05proof\x18\x02 \x01(\x0b\x32#.ibc.core.commitment.v1.MerkleProof\x1a\x16\n\x05Value\x12\r\n\x05value\x18\x01 \x01(\x0c\"$\n\x12PrefixValueRequest\x12\x0e\n\x06prefix\x18\x02 \x01(\t\"1\n\x13PrefixValueResponse\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x0c\"7\n\x0cWatchRequest\x12\x11\n\tkey_regex\x18\x01 \x01(\t\x12\x14\n\x0cnv_key_regex\x18\x02 \x01(\t\"\x9c\x02\n\rWatchResponse\x12\x0f\n\x07version\x18\x01 \x01(\x04\x12;\n\x02kv\x18\x05 \x01(\x0b\x32-.penumbra.cnidarium.v1.WatchResponse.KeyValueH\x00\x12@\n\x05nv_kv\x18\x06 \x01(\x0b\x32/.penumbra.cnidarium.v1.WatchResponse.NvKeyValueH\x00\x1a\x37\n\x08KeyValue\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x0f\n\x07\x64\x65leted\x18\x03 \x01(\x08\x1a\x39\n\nNvKeyValue\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x0f\n\x07\x64\x65leted\x18\x03 \x01(\x08\x42\x07\n\x05\x65ntry2\xa9\x02\n\x0cQueryService\x12[\n\x08KeyValue\x12&.penumbra.cnidarium.v1.KeyValueRequest\x1a\'.penumbra.cnidarium.v1.KeyValueResponse\x12\x66\n\x0bPrefixValue\x12).penumbra.cnidarium.v1.PrefixValueRequest\x1a*.penumbra.cnidarium.v1.PrefixValueResponse0\x01\x12T\n\x05Watch\x12#.penumbra.cnidarium.v1.WatchRequest\x1a$.penumbra.cnidarium.v1.WatchResponse0\x01\x62\x06proto3')
 

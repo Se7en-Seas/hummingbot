@@ -11,32 +11,26 @@ import numpy as np
 import pandas as pd
 import requests
 
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1alpha1 import (
-    dex_pb2 as penumbra_dot_core_dot_component_dot_dex_dot_v1alpha1_dot_dex__pb2,
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1 import (
+    dex_pb2,
 )
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1alpha1.dex_pb2_grpc import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1.dex_pb2_grpc import (
     QueryService as DexQueryService,
 )
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.shielded_pool.v1alpha1 import (
-    shielded_pool_pb2 as penumbra_dot_core_dot_component_dot_shielded__pool_dot_v1alpha1_dot_shielded__pool__pb2,
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.shielded_pool.v1 import (
+    shielded_pool_pb2,
 )
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.shielded_pool.v1alpha1.shielded_pool_pb2_grpc import (
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.shielded_pool.v1.shielded_pool_pb2_grpc import (
     QueryService,
 )
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.custody.v1alpha1 import (
-    custody_pb2 as penumbra_dot_custody_dot_v1alpha1_dot_custody__pb2,
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.keys.v1 import keys_pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.custody.v1 import custody_pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.custody.v1.custody_pb2_grpc import (
+    CustodyService,
 )
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.custody.v1alpha1.custody_pb2_grpc import (
-    CustodyProtocolService,
-)
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1alpha1 import (
-    view_pb2 as penumbra_dot_view_dot_v1alpha1_dot_view__pb2,
-)
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1alpha1.view_pb2_grpc import (
-    ViewProtocolService,
-)
-from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.penumbra_api_data_source import (
-    PenumbraAPIDataSource as PenumbraGateway,
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1 import view_pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1.view_pb2_grpc import (
+    ViewService,
 )
 from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.penumbra_constants import (
     TOKEN_ADDRESS_MAP,
@@ -49,6 +43,8 @@ from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 
 LP_NFT_OPEN_PREFIX = 'lpnft_opened_'
 LP_NFT_CLOSED_PREFIX = 'lpnft_closed_'
+
+# TODO: Consider setting all manual fees to automatic fees instead (for fee_mode https://buf.build/penumbra-zone/penumbra/docs/main:penumbra.view.v1#penumbra.view.v1.TransactionPlannerRequest)
 
 # The original Osiris bot uses binance feeds, so we aim to do the same here
 # https://binance-docs.github.io/apidocs/spot/en/#market-data-endpoints
@@ -183,9 +179,9 @@ class PenumbraOsiris(ScriptStrategyBase):
         return nonce_bytes
 
     def authorize_tx(self, transaction):
-        auth_client = CustodyProtocolService()
+        auth_client = CustodyService()
 
-        auth_request = penumbra_dot_custody_dot_v1alpha1_dot_custody__pb2.AuthorizeRequest()
+        auth_request = custody_pb2.AuthorizeRequest()
         auth_request.plan.CopyFrom(transaction.plan)
 
         auth_response = auth_client.Authorize(request=auth_request,target=self._pclientd_url,insecure=True)
@@ -197,11 +193,11 @@ class PenumbraOsiris(ScriptStrategyBase):
         try:
             start_time = (time.time())
 
-            client = ViewProtocolService()
-            transactionPlanRequest = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.TransactionPlannerRequest()
-
+            client = ViewService()
+            transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+            
             # Set fee to zero
-            transactionPlanRequest.fee.amount.lo = self.int_to_lo_hi(0)[0]
+            transactionPlanRequest.manual_fee.amount.lo = self.int_to_lo_hi(0)[0]
 
             # Assuming you have values for fee, p, q, your_trading_pair, your_reserve1, your_reserve2, and your_nonce
             # Set the TradingFunction directly
@@ -293,7 +289,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             authorized_resp = self.authorize_tx(transactionPlanResponse)
 
             # Witness & Build
-            wit_and_build_req = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.WitnessAndBuildRequest()
+            wit_and_build_req = view_pb2.WitnessAndBuildRequest()
             wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
             wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
 
@@ -302,7 +298,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             start_time = (time.time())
 
             # Broadcast
-            broadcast_request = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.BroadcastTransactionRequest()
+            broadcast_request = view_pb2.BroadcastTransactionRequest()
             broadcast_request.transaction.CopyFrom(wit_and_build_resp.transaction)
             # Service will await detection on chain
             broadcast_request.await_detection = True
@@ -323,17 +319,17 @@ class PenumbraOsiris(ScriptStrategyBase):
         print(f"Time to get orders: {(time.time()) - start_time}")
         #logging.getLogger().info("Orders: ", active_orders)
 
-        client = ViewProtocolService()
+        client = ViewService()
         # Iterate over dictionary keys
         order_key_list = list(active_orders.keys())
 
         for order_key in order_key_list:
             try:
                 start_time = (time.time())
-                transactionPlanRequest = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.TransactionPlannerRequest()
+                transactionPlanRequest = view_pb2.TransactionPlannerRequest()
 
                 # Set fee to zero
-                transactionPlanRequest.fee.amount.lo = self.int_to_lo_hi(0)[0]
+                transactionPlanRequest.manual_fee.amount.lo = self.int_to_lo_hi(0)[0]
 
                 # Set the Position directly
                 position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
@@ -350,7 +346,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 start_time = (time.time())
 
                 # Witness & Build
-                wit_and_build_req = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.WitnessAndBuildRequest()
+                wit_and_build_req = view_pb2.WitnessAndBuildRequest()
                 wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
                 wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
 
@@ -360,7 +356,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 start_time = (time.time())
 
                 # Broadcast
-                broadcast_request = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.BroadcastTransactionRequest()
+                broadcast_request = view_pb2.BroadcastTransactionRequest()
                 broadcast_request.transaction.CopyFrom(wit_and_build_resp.transaction)
                 # Service will await detection on chain
                 broadcast_request.await_detection = True
@@ -386,10 +382,10 @@ class PenumbraOsiris(ScriptStrategyBase):
         for order_key in all_order_keys:
             try:
                 start_time = (time.time())
-                transactionPlanRequest = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.TransactionPlannerRequest()
+                transactionPlanRequest = view_pb2.TransactionPlannerRequest()
 
                 # Set fee to zero
-                transactionPlanRequest.fee.amount.lo = self.int_to_lo_hi(0)[0]
+                transactionPlanRequest.manual_fee.amount.lo = self.int_to_lo_hi(0)[0]
 
                 # Get where current position is (active/closed) to figure out what prefix to use
                 if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
@@ -430,7 +426,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 start_time = (time.time())
 
                 # Witness & Build
-                wit_and_build_req = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.WitnessAndBuildRequest()
+                wit_and_build_req = view_pb2.WitnessAndBuildRequest()
                 wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
                 wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
 
@@ -440,7 +436,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 start_time = (time.time())
 
                 # Broadcast
-                broadcast_request = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.BroadcastTransactionRequest()
+                broadcast_request = view_pb2.BroadcastTransactionRequest()
                 broadcast_request.transaction.CopyFrom(wit_and_build_resp.transaction)
                 # Service will await detection on chain
                 broadcast_request.await_detection = True
@@ -461,10 +457,11 @@ class PenumbraOsiris(ScriptStrategyBase):
         self.log_with_clock(logging.INFO, msg)
         self.notify_hb_app_with_timestamp(msg)
 
-    def get_all_balances(self):
+    def get_all_balances(self, account_number: int = 0):
         # Create new grpc.Channel + client
-        client = ViewProtocolService()
-        request = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.BalancesRequest()
+        client = ViewService()
+        request = view_pb2.BalancesRequest()
+        request.account_filter.account = account_number
         query_client = QueryService()
 
         start_time = (time.time())
@@ -475,17 +472,23 @@ class PenumbraOsiris(ScriptStrategyBase):
 
         start_time = (time.time())
         for response in responses:
-            balance = {
-                "amount":
-                response.balance.amount.lo,
-                "asset_id":
-                    bytes.fromhex(
-                        response.balance.asset_id.inner.hex())
-            }
+            #print(response)
+
+            try: 
+                balance = {
+                    "amount":
+                    response.balance_view.known_asset_id.amount.lo,
+                    "asset_id":
+                        bytes.fromhex(
+                            response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())
+                }
+            except Exception as e:
+                print("Unkown asset balance found, disregarding...")
+                continue
 
             # ! You can query denoms directly but this makes things significantly slower (22+ seconds), use constants file for speed
             '''
-            denom_req = penumbra_dot_core_dot_component_dot_shielded__pool_dot_v1alpha1_dot_shielded__pool__pb2.DenomMetadataByIdRequest()
+            denom_req = shielded_pool_pb2.DenomMetadataByIdRequest()
             denom_req.asset_id.inner = balance["asset_id"]
 
             # Query for metadata from DenomMetadataById
@@ -501,27 +504,27 @@ class PenumbraOsiris(ScriptStrategyBase):
 
             symbol = denom_res.denom_metadata.display
             '''
-            token_address = base64.b64encode(bytes.fromhex(response.balance.asset_id.inner.hex())).decode('utf-8')
+            token_address = base64.b64encode(bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode('utf-8')
 
             if token_address not in TOKEN_ADDRESS_MAP:
+                print("Token not found in TOKEN_ADDRESS_MAP: ", token_address)
                 #! This will skip tokens not in the TOKEN_ADDRESS_MAP, so make sure your trading pair is in there
                 continue
 
             decimals = TOKEN_ADDRESS_MAP[token_address]['decimals']
             symbol = TOKEN_ADDRESS_MAP[token_address]['symbol']
 
-
             # amount's are uint 128 bit https://buf.build/penumbra-zone/penumbra/docs/300a488c79c9490d86cf09e1eceff593:penumbra.core.num.v1alpha1#penumbra.core.num.v1alpha1.Amount
-            balance = Decimal(str(self.hi_low_to_human_readable(response.balance.amount.hi, response.balance.amount.lo, decimals)))
+            balance = Decimal(str(self.hi_low_to_human_readable(response.balance_view.known_asset_id.amount.hi, response.balance_view.known_asset_id.amount.lo, decimals)))
 
             balance_dict[symbol] = {
                 "asset_id_str":
                 base64.b64encode(
                     bytes.fromhex(
-                        response.balance.asset_id.inner.hex())).decode(
+                        response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode(
                             'utf-8'),
                 "asset_id_bytes":
-                bytes.fromhex(response.balance.asset_id.inner.hex()),
+                bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex()),
                 "amount":
                 balance,
                 "decimals":
@@ -540,7 +543,10 @@ class PenumbraOsiris(ScriptStrategyBase):
                     }
         }
         '''
-
+        print("Balances: ")
+        for key in balance_dict:
+            print(key, str(balance_dict[key]['amount']))
+            
         #pprint(balance_dict)
         return balance_dict
 
@@ -574,11 +580,11 @@ class PenumbraOsiris(ScriptStrategyBase):
         return df
 
     def get_orders(self):
-        client = ViewProtocolService()
+        client = ViewService()
         query_client = DexQueryService()
 
         # Get all the cleaned assets
-        assets_req = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.AssetsRequest()
+        assets_req = view_pb2.AssetsRequest()
         assets_req.include_lp_nfts = True
         assets = client.Assets(request=assets_req,target=self._pclientd_url,insecure=True)
 
@@ -594,7 +600,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 cleaned_assets[asset_id] = asset
 
         # Get all the notes
-        notes_req = penumbra_dot_view_dot_v1alpha1_dot_view__pb2.NotesRequest()
+        notes_req = view_pb2.NotesRequest()
         notes_req.include_spent = False
 
         notes_resp = client.Notes(request=notes_req,target=self._pclientd_url,insecure=True)
@@ -608,7 +614,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             # Associate the note with it's relevant asset in cleaned_assets by matching on penumbra_asset_id.inner & id_str
             if id_byte_str in cleaned_assets:
                 # Get Position Data
-                liq_request = penumbra_dot_core_dot_component_dot_dex_dot_v1alpha1_dot_dex__pb2.LiquidityPositionByIdRequest()
+                liq_request = dex_pb2.LiquidityPositionByIdRequest()
 
                 # get the current prefix
                 if str(cleaned_assets[id_byte_str].denom_metadata.display).startswith(LP_NFT_OPEN_PREFIX):

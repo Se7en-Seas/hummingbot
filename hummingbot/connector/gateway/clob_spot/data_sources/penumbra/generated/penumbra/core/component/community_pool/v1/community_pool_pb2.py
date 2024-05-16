@@ -14,7 +14,9 @@ from google.protobuf.internal import builder as _builder
 _sym_db = _symbol_database.Default()
 
 
-from penumbra.core.asset.v1 import asset_pb2 as penumbra_dot_core_dot_asset_dot_v1_dot_asset__pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.asset.v1 import (
+    asset_pb2 as penumbra_dot_core_dot_asset_dot_v1_dot_asset__pb2,
+)
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n>penumbra/core/component/community_pool/v1/community_pool.proto\x12)penumbra.core.component.community_pool.v1\x1a\"penumbra/core/asset/v1/asset.proto\"I\n\x17\x43ommunityPoolParameters\x12.\n&community_pool_spend_proposals_enabled\x18\x01 \x01(\x08\"s\n\x0eGenesisContent\x12\x61\n\x15\x63ommunity_pool_params\x18\x01 \x01(\x0b\x32\x42.penumbra.core.component.community_pool.v1.CommunityPoolParameters\"W\n!CommunityPoolAssetBalancesRequest\x12\x32\n\tasset_ids\x18\x02 \x03(\x0b\x32\x1f.penumbra.core.asset.v1.AssetId\"T\n\"CommunityPoolAssetBalancesResponse\x12.\n\x07\x62\x61lance\x18\x01 \x01(\x0b\x32\x1d.penumbra.core.asset.v1.Value2\xcc\x01\n\x0cQueryService\x12\xbb\x01\n\x1a\x43ommunityPoolAssetBalances\x12L.penumbra.core.component.community_pool.v1.CommunityPoolAssetBalancesRequest\x1aM.penumbra.core.component.community_pool.v1.CommunityPoolAssetBalancesResponse0\x01\x62\x06proto3')
 
