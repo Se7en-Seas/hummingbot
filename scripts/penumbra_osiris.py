@@ -207,6 +207,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                     print("Current progress: ", wit_and_build_resp.build_progress.progress)
                 else:
                     print("Unexpected response: ", wit_and_build_resp)
+                    return None
 
             except StopIteration:
                 # Handle end of iterator (shouldn't happen if server is streaming)
@@ -216,7 +217,37 @@ class PenumbraOsiris(ScriptStrategyBase):
                 print(f"Error processing response: {e}")
                 time.sleep(1)
                 
-    
+    def build_and_broadcast_tx(self, client, broadcast_request):
+        # Service will await detection on chain
+        broadcast_request.await_detection = True
+
+        logging.getLogger().info("Creating order...")
+        broadcast_response_iterator = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
+        broadcast_resp = None
+        
+        while True:
+            try:
+                # Fetch the next response from the iterator
+                broadcast_resp = next(broadcast_response_iterator)
+
+                # Check which field is set in the oneof status
+                status_field = broadcast_resp.WhichOneof("status")
+
+                if status_field == "confirmed":
+                    return broadcast_resp.confirmed
+                elif status_field == "broadcast_success":
+                    print("Broadcasted, but awaiting confirmation...")
+                else:
+                    print("Unexpected response: ", broadcast_resp)
+                    return None
+
+            except StopIteration:
+                # Handle end of iterator (shouldn't happen if server is streaming)
+                print("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
+                break
+            except Exception as e:
+                print(f"Error processing response: {e}")
+                time.sleep(1)
 
     # https://guide.penumbra.zone/main/pclientd/build_transaction.html
     def make_liquidity_position(self, bid_ask: List[int]):
@@ -330,18 +361,9 @@ class PenumbraOsiris(ScriptStrategyBase):
             # Broadcast
             broadcast_request = view_pb2.BroadcastTransactionRequest()
             broadcast_request.transaction.CopyFrom(tx_to_broadcast)
-            # Service will await detection on chain
-            broadcast_request.await_detection = True
-
-            logging.getLogger().info("Creating order...")
-            broadcast_response = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
+            broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
             
-            
-            
-            
-            
-            
-            logging.getLogger().info(f"Order created at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.hash.hex()}")
+            logging.getLogger().info(f"Order created at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
             print(f"Time to get LP broadcast: {(time.time()) - start_time}")
             #breakpoint()
 
@@ -353,7 +375,6 @@ class PenumbraOsiris(ScriptStrategyBase):
         start_time = (time.time())
         active_orders, closed_orders = self.get_orders()
         print(f"Time to get orders: {(time.time()) - start_time}")
-        #logging.getLogger().info("Orders: ", active_orders)
 
         client = ViewService()
         # Iterate over dictionary keys
@@ -393,13 +414,11 @@ class PenumbraOsiris(ScriptStrategyBase):
                 # Broadcast
                 broadcast_request = view_pb2.BroadcastTransactionRequest()
                 broadcast_request.transaction.CopyFrom(tx_to_broadcast)
-                # Service will await detection on chain
-                broadcast_request.await_detection = True
 
                 logging.getLogger().info("Deleting order..")
-                broadcast_response = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True)
+                broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
                 logging.getLogger().info(
-                    f"Order deleted at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.hash.hex()}"
+                    f"Order deleted at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}"
                 )
                 print(f"Time to get Cancel broadcast: {(time.time()) - start_time}")
 
@@ -472,13 +491,11 @@ class PenumbraOsiris(ScriptStrategyBase):
                 # Broadcast
                 broadcast_request = view_pb2.BroadcastTransactionRequest()
                 broadcast_request.transaction.CopyFrom(tx_to_broadcast)
-                # Service will await detection on chain
-                broadcast_request.await_detection = True
-
+                
                 logging.getLogger().info("Withdrawing from position..")
-                broadcast_response = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True)
+                broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
                 logging.getLogger().info(
-                    f"Withdrawn from position at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.hash.hex()}"
+                    f"Withdrawn from position at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}"
                 )
                 print(f"Time to get Withdraw broadcast: {(time.time()) - start_time}")
 
@@ -680,6 +697,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                         'asset': cleaned_assets[id_byte_str],
                         'position': response.data
                     }
+        #print("Active positions: ", active_liq_positions)
 
         return active_liq_positions, closed_liq_positions
 
