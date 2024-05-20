@@ -187,6 +187,36 @@ class PenumbraOsiris(ScriptStrategyBase):
         auth_response = auth_client.Authorize(request=auth_request,target=self._pclientd_url,insecure=True)
 
         return auth_response
+    
+    def witness_and_build_tx(self, client, wit_and_build_req):
+        wit_and_build_resp_iterator = client.WitnessAndBuild(request=wit_and_build_req,target=self._pclientd_url,insecure=True)
+        wit_and_build_resp = None
+        
+        while True:
+            try:
+                # Fetch the next response from the iterator
+                wit_and_build_resp = next(wit_and_build_resp_iterator)
+
+                # Check which field is set in the oneof status
+                status_field = wit_and_build_resp.WhichOneof("status")
+
+                if status_field == "complete":
+                    return wit_and_build_resp.complete.transaction
+                elif status_field == "build_progress":
+                    print(wit_and_build_resp.build_progress)
+                    print("Current progress: ", wit_and_build_resp.build_progress.progress)
+                else:
+                    print("Unexpected response: ", wit_and_build_resp)
+
+            except StopIteration:
+                # Handle end of iterator (shouldn't happen if server is streaming)
+                print("Fatal error thrown, server disconnected prematurely during witness and build step.")
+                break
+            except Exception as e:
+                print(f"Error processing response: {e}")
+                time.sleep(1)
+                
+    
 
     # https://guide.penumbra.zone/main/pclientd/build_transaction.html
     def make_liquidity_position(self, bid_ask: List[int]):
@@ -292,19 +322,25 @@ class PenumbraOsiris(ScriptStrategyBase):
             wit_and_build_req = view_pb2.WitnessAndBuildRequest()
             wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
             wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
-
-            wit_and_build_resp = client.WitnessAndBuild(request=wit_and_build_req,target=self._pclientd_url,insecure=True)
+            tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
+            
             print(f"Time to get LP auth, witness and build: {(time.time()) - start_time}")
             start_time = (time.time())
 
             # Broadcast
             broadcast_request = view_pb2.BroadcastTransactionRequest()
-            broadcast_request.transaction.CopyFrom(wit_and_build_resp.transaction)
+            broadcast_request.transaction.CopyFrom(tx_to_broadcast)
             # Service will await detection on chain
             broadcast_request.await_detection = True
 
             logging.getLogger().info("Creating order...")
             broadcast_response = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
+            
+            
+            
+            
+            
+            
             logging.getLogger().info(f"Order created at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.hash.hex()}")
             print(f"Time to get LP broadcast: {(time.time()) - start_time}")
             #breakpoint()
@@ -349,15 +385,14 @@ class PenumbraOsiris(ScriptStrategyBase):
                 wit_and_build_req = view_pb2.WitnessAndBuildRequest()
                 wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
                 wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
-
-                wit_and_build_resp = client.WitnessAndBuild(request=wit_and_build_req,target=self._pclientd_url,insecure=True)
+                tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
 
                 print(f"Time to get Cancel witness and build: {(time.time()) - start_time}")
                 start_time = (time.time())
 
                 # Broadcast
                 broadcast_request = view_pb2.BroadcastTransactionRequest()
-                broadcast_request.transaction.CopyFrom(wit_and_build_resp.transaction)
+                broadcast_request.transaction.CopyFrom(tx_to_broadcast)
                 # Service will await detection on chain
                 broadcast_request.await_detection = True
 
@@ -429,15 +464,14 @@ class PenumbraOsiris(ScriptStrategyBase):
                 wit_and_build_req = view_pb2.WitnessAndBuildRequest()
                 wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
                 wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
-
-                wit_and_build_resp = client.WitnessAndBuild(request=wit_and_build_req,target=self._pclientd_url,insecure=True)
-
+                tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
+                
                 print(f"Time to get Withdraw witness and build: {(time.time()) - start_time}")
                 start_time = (time.time())
 
                 # Broadcast
                 broadcast_request = view_pb2.BroadcastTransactionRequest()
-                broadcast_request.transaction.CopyFrom(wit_and_build_resp.transaction)
+                broadcast_request.transaction.CopyFrom(tx_to_broadcast)
                 # Service will await detection on chain
                 broadcast_request.await_detection = True
 
