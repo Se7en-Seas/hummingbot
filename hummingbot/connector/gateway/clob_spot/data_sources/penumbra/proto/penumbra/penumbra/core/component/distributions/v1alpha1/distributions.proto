@@ -1,3 +1,0 @@
-syntax = "proto3";
-package penumbra.core.component.distributions.v1alpha1;
-
