@@ -109,7 +109,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
     def create_proposal(self) -> List[float]:
         try:
-            bookTicker = requests.get(f"https://api.binance.com/api/v3/ticker/bookTicker?symbol={self.reference_pair.replace('-', '')}").json()
+            bookTicker = requests.get(f"https://api.binance.us/api/v3/ticker/bookTicker?symbol={self.reference_pair.replace('-', '')}").json()
             bid_price = bookTicker['bidPrice']
             ask_price = bookTicker['askPrice']
         except:
