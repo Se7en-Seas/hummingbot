@@ -577,7 +577,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
             # amount's are uint 128 bit https://buf.build/penumbra-zone/penumbra/docs/300a488c79c9490d86cf09e1eceff593:penumbra.core.num.v1alpha1#penumbra.core.num.v1alpha1.Amount
             balance = Decimal(str(self.hi_low_to_human_readable(response.balance_view.known_asset_id.amount.hi, response.balance_view.known_asset_id.amount.lo, decimals)))
-            logging.getLogger().info(f"Balance for {symbol}: {balance}")
+            #logging.getLogger().info(f"Balance for {symbol}: {balance}")
 
             balance_dict[symbol] = {
                 "asset_id_str":
@@ -592,7 +592,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 "decimals":
                 decimals,
             }
-            logging.getLogger().info(f"Running balance dict: {balance_dict[symbol]}")
+            #logging.getLogger().info(f"Running balance dict: {balance_dict[symbol]}")
         print(f"Time to query all denoms & process data: {(time.time()) - start_time}")
         logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
 
