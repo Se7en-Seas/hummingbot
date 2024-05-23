@@ -516,8 +516,10 @@ class PenumbraOsiris(ScriptStrategyBase):
         query_client = QueryService()
 
         start_time = (time.time())
+        logging.getLogger().info("Getting all balances...")
         responses = client.Balances(request=request,target=self._pclientd_url,insecure=True)
         print(f"Time to get Balances: {(time.time()) - start_time}")
+        logging.getLogger().info(f"Time to get Balances: {(time.time()) - start_time}")
 
         balance_dict = {}
 
@@ -535,6 +537,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 }
             except Exception as e:
                 print("Unkown asset balance found, disregarding...")
+                logging.getLogger().error(f"Unkown asset balance found, disregarding... {str(e)}")
                 continue
 
             # ! You can query denoms directly but this makes things significantly slower (22+ seconds), use constants file for speed
@@ -559,6 +562,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
             if token_address not in TOKEN_ADDRESS_MAP:
                 print("Token not found in TOKEN_ADDRESS_MAP: ", token_address)
+                logging.getLogger().error(f"Token not found in TOKEN_ADDRESS_MAP: {token_address}")
                 #! This will skip tokens not in the TOKEN_ADDRESS_MAP, so make sure your trading pair is in there
                 continue
 
@@ -582,6 +586,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 decimals,
             }
         print(f"Time to query all denoms & process data: {(time.time()) - start_time}")
+        logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
 
         '''
         example return: 
@@ -599,6 +604,8 @@ class PenumbraOsiris(ScriptStrategyBase):
             print(key, str(balance_dict[key]['amount']))
             
         #pprint(balance_dict)
+        logging.getLogger().info("Balances: ")
+        logging.getLogger().info(balance_dict)
         return balance_dict
 
     def get_balance_df(self):
