@@ -558,13 +558,19 @@ class PenumbraOsiris(ScriptStrategyBase):
 
             symbol = denom_res.denom_metadata.display
             '''
-            token_address = base64.b64encode(bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode('utf-8')
+            try:
+                token_address = base64.b64encode(bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode('utf-8')
 
-            if token_address not in TOKEN_ADDRESS_MAP:
-                print("Token not found in TOKEN_ADDRESS_MAP: ", token_address)
-                logging.getLogger().error(f"Token not found in TOKEN_ADDRESS_MAP: {token_address}")
-                #! This will skip tokens not in the TOKEN_ADDRESS_MAP, so make sure your trading pair is in there
+                if token_address not in TOKEN_ADDRESS_MAP:
+                    print("Token not found in TOKEN_ADDRESS_MAP: ", token_address)
+                    logging.getLogger().error(f"Token not found in TOKEN_ADDRESS_MAP: {token_address}")
+                    #! This will skip tokens not in the TOKEN_ADDRESS_MAP, so make sure your trading pair is in there
+                    continue
+            except Exception as e:
+                logging.getLogger().error(f"Could not serialize token address, disregarding... {str(e)}")
                 continue
+            
+            logging.getLogger().info(f"Token found in TOKEN_ADDRESS_MAP: {token_address}")
 
             decimals = TOKEN_ADDRESS_MAP[token_address]['decimals']
             symbol = TOKEN_ADDRESS_MAP[token_address]['symbol']
