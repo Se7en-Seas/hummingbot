@@ -2,7 +2,7 @@
 The [penumbra osiris bot](https://github.com/Se7en-Seas/hummingbot/blob/penunumbra-integration/scripts/penumbra_osiris.py) aims to be an approximate parity to its [rust counterpart](https://github.com/penumbra-zone/osiris/) and function as an abstraction to allow new users to interact with the penumbra protocol without needing to understand the underlying mechanics.
 
 ## First time setup
-1. Clone this (repo and checkout this branch)[https://github.com/Se7en-Seas/hummingbot/tree/penunumbra-integration/]
+1. Clone this [repo and checkout this branch](https://github.com/Se7en-Seas/hummingbot/tree/penunumbra-integration/)
 ```bash
 git clone https://github.com/Se7en-Seas/hummingbot/tree/penunumbra-integration/
 cd hummingbot
