@@ -53,7 +53,7 @@ class PenumbraOsiris(ScriptStrategyBase):
     Adapted from SimplePMM strategy example
     Video: -
     Description:
-    The bot will place two orders around the bid-ask binances prices in a trading_pair. Every order_refresh_time in seconds,
+    The bot will place 1 order around at the midpoint between the bid-ask binances prices in a trading_pair. Every order_refresh_time in seconds,
     the bot will cancel and replace the orders.
     """
     #! Note: Penumbra does not current support websocket connections, so the order book must be refreshed by force in each tick before execution logic can begin
@@ -319,7 +319,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             # Set the Reserves directly
             reserves = transactionPlanRequest.position_opens[0].position.reserves
 
-            # TODO: really should be availible balances
+            # TODO: really should be available balances
             # Get all balances
             b_time = (time.time())
             balances = self.get_all_balances()
@@ -572,7 +572,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 logging.getLogger().error(f"Could not serialize token address, disregarding... {str(e)}")
                 continue
             
-            logging.getLogger().info(f"Token found in TOKEN_ADDRESS_MAP: {token_address}")
+            #logging.getLogger().info(f"Token found in TOKEN_ADDRESS_MAP: {token_address}")
 
             decimals = TOKEN_ADDRESS_MAP[token_address]['decimals']
             symbol = TOKEN_ADDRESS_MAP[token_address]['symbol']
@@ -623,7 +623,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         Returns a data frame for all asset balances for displaying purpose.
         """
         columns: List[str] = [
-            "Exchange", "Asset", "Availible Balance"
+            "Exchange", "Asset", "Available Balance"
         ]
         data: List[Any] = []
 
@@ -722,7 +722,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         """
         Return a data frame of all active orders for displaying purpose.
         """
-        columns = ["Exchange", "Market", "Status", "Reserves 1", "Reserves 2"]
+        columns = ["Exchange", "Market", "Status", "Reserves 1", "Reserves 2", "Price"]
         data = []
 
         open_orders, closed_orders = self.get_orders()
@@ -753,12 +753,23 @@ class PenumbraOsiris(ScriptStrategyBase):
                 order['position'].reserves.r2.hi,
                 order['position'].reserves.r2.lo, r2_decimals)
 
+            p_human = self.hi_low_to_human_readable(
+                order['position'].phi.q.hi,
+                order['position'].phi.q.lo, r1_decimals)
+            q_human = self.hi_low_to_human_readable(
+                order['position'].phi.p.hi,
+                order['position'].phi.p.lo, r2_decimals)
+            
+            # Truncate to 2 decimal places
+            price_human = round(p_human / q_human, 2)
+
             data.append([
                 self.exchange,
                 self.trading_pair,
                 state,
                 str(round(float(reserves_1_num),2)) + ' ' + TOKEN_ADDRESS_MAP[r1_address]['symbol'],
                 str(round(float(reserves_2_num),2)) + ' ' + TOKEN_ADDRESS_MAP[r2_address]['symbol'],
+                f"{price_human} {TOKEN_ADDRESS_MAP[r2_address]['symbol']}/{TOKEN_ADDRESS_MAP[r1_address]['symbol']}"
             ])
 
         if not data:
