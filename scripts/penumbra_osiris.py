@@ -63,9 +63,11 @@ class PenumbraOsiris(ScriptStrategyBase):
     order_refresh_time = 60
     order_amount = 0.01
     create_timestamp = 0
-    trading_pair = "gm-penumbra"
     exchange = "penumbra"
-    reference_pair = "ETH-USDC"
+    # The pair on penumbra to trade
+    trading_pair = "test_btc-test_usd"
+    # How the trading pair will be priced according to binance price feeds
+    reference_pair = "BTC-USDC"
     markets = {exchange: {trading_pair}}
     _pclientd_url = 'localhost:8081'
     _gateway_url = 'localhost:15888'
@@ -519,7 +521,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         logging.getLogger().info("Getting all balances...")
         responses = client.Balances(request=request,target=self._pclientd_url,insecure=True)
         print(f"Time to get Balances: {(time.time()) - start_time}")
-        logging.getLogger().info(f"Time to get Balances: {(time.time()) - start_time}")
+        #logging.getLogger().info(f"Time to get Balances: {(time.time()) - start_time}")
 
         balance_dict = {}
 
@@ -536,8 +538,8 @@ class PenumbraOsiris(ScriptStrategyBase):
                             response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())
                 }
             except Exception as e:
-                print("Unkown asset balance found, disregarding...")
-                logging.getLogger().error(f"Unkown asset balance found, disregarding... {str(e)}")
+                #print("Unkown asset balance found, disregarding...")
+                #logging.getLogger().error(f"Unkown asset balance found, disregarding... {str(e)}")
                 continue
 
             # ! You can query denoms directly but this makes things significantly slower (22+ seconds), use constants file for speed
@@ -594,7 +596,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             }
             #logging.getLogger().info(f"Running balance dict: {balance_dict[symbol]}")
         print(f"Time to query all denoms & process data: {(time.time()) - start_time}")
-        logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
+        #logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
 
         '''
         example return: 
@@ -612,8 +614,8 @@ class PenumbraOsiris(ScriptStrategyBase):
             print(key, str(balance_dict[key]['amount']))
             
         #pprint(balance_dict)
-        logging.getLogger().info("Balances: ")
-        logging.getLogger().info(balance_dict)
+        #logging.getLogger().info("Balances: ")
+        #logging.getLogger().info(balance_dict)
         return balance_dict
 
     def get_balance_df(self):

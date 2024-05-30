@@ -34,6 +34,21 @@ TOKEN_ADDRESS_MAP = {
         "decimals": 0,
         "baseDenom": "cube"
     },
+    "nDjzm+ldIrNMJha1anGMDVxpA5cLCPnUYQ1clmHF1gw=": {
+        "symbol": "pizza",
+        "decimals": 0,
+        "baseDenom": "pizza"
+    },
+    "ypUT1AOtjfwMOKMATACoD9RSvi8jY/YnYGi46CZ/6Q8=": {
+        "symbol": "test_atom",
+        "decimals": 6,
+        "baseDenom": "utest_atom"
+    },
+    "pmpygqUf4DL+z849rGPpudpdK/+FAv8qQ01U2C73kAw=": {
+        "symbol": "test_osmo",
+        "decimals": 6,
+        "baseDenom": "utest_osmo"
+    },
 }
 
 # Create token symbol map from address map
