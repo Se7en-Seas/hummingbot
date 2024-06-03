@@ -67,7 +67,7 @@ class PenumbraOsiris(ScriptStrategyBase):
     reserves2_pct = 0.1
     
     # The pair on penumbra to trade
-    trading_pair = "gm-penumbra"
+    trading_pair = "penumbra-gm"
     # How the trading pair will be priced according to binance price feeds
     reference_pair = "BTC-USDC"
     # ------------------------------------
@@ -319,25 +319,31 @@ class PenumbraOsiris(ScriptStrategyBase):
             trading_function.component.fee = int(spread)
 
             # Get asset ids from constants file
-            id_1 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[0]]
-            id_2 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[1]]
+            asset_1 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[0]]
+            asset_2 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[1]]
 
-            if id_1 is None:
+            if asset_1 is None:
                 logging.getLogger().error(
                     f"Asset {self.trading_pair.split('-')[0]} not found in constants file"
                 )
-            if id_2 is None:
+            if asset_2 is None:
                 logging.getLogger().error(
                     f"Asset {self.trading_pair.split('-')[1]} not found in constants file"
                 )
+            # Asset1 must be < Asset2 according to their lexographic order on byte strings
+            # https://buf.build/penumbra-zone/penumbra/docs/db38dcb505fd43769a072925543bc500:penumbra.core.component.dex.v1#penumbra.core.component.dex.v1.TradingFunction
+            if asset_1['address'] > asset_2['address']:
+                tmp = asset_1
+                asset_1 = asset_2
+                asset_2 = tmp
 
             trading_function.pair.asset_1.inner = base64.b64decode(
-                id_1['address'])
+                asset_1['address'])
             trading_function.pair.asset_2.inner = base64.b64decode(
-                id_2['address'])
+                asset_2['address'])
             
-            #print(f"Asset 1: {id_1['address']}")
-            #print(f"Asset 2: {id_2['address']}")
+            print(f"Asset 1: {asset_1['address']}")
+            print(f"Asset 2: {asset_2['address']}")
 
             # Set the PositionState directly
             position_state = transactionPlanRequest.position_opens[0].position.state
@@ -352,8 +358,8 @@ class PenumbraOsiris(ScriptStrategyBase):
             balances = self.get_all_balances()
             print(f"Sub query time to get balances: {(time.time()) - b_time}")
 
-            res1 = balances[self.trading_pair.split('-')[0]]['amount'] * 10**balances[self.trading_pair.split('-')[0]]['decimals']
-            res2 = balances[self.trading_pair.split('-')[1]]['amount'] * 10**balances[self.trading_pair.split('-')[1]]['decimals']
+            res1 = balances[asset_1["symbol"]]['amount'] * 10**balances[asset_1["symbol"]]['decimals']
+            res2 = balances[asset_2["symbol"]]['amount'] * 10**balances[asset_2["symbol"]]['decimals']
 
             #reserve1_int, reserve2_int = self.calculate_half_reserves(res1, res2)
             reserve1, reserve2 = self.calculate_pct_reserves(res1, res2, self.reserves1_pct, self.reserves2_pct)
@@ -368,9 +374,9 @@ class PenumbraOsiris(ScriptStrategyBase):
             
             # Convert back to human readable and log just to sanity check
             print(
-                f"Setting {self.trading_pair.split('-')[0]} in Reserve 1: {self.hi_low_to_human_readable(reserves.r1.hi, reserves.r1.lo, balances[self.trading_pair.split('-')[0]]['decimals'])}")
+                f"Setting {asset_1['symbol']} in Reserve 1: {self.hi_low_to_human_readable(reserves.r1.hi, reserves.r1.lo, balances[asset_1['symbol']]['decimals'])}")
             print(
-                f"Setting {self.trading_pair.split('-')[1]} Reserve 2: {self.hi_low_to_human_readable(reserves.r2.hi, reserves.r2.lo, balances[self.trading_pair.split('-')[1]]['decimals'])}")
+                f"Setting {asset_2['symbol']} Reserve 2: {self.hi_low_to_human_readable(reserves.r2.hi, reserves.r2.lo, balances[asset_2['symbol']]['decimals'])}")
             
             # Set other fields of Position
             transactionPlanRequest.position_opens[0].position.close_on_fill = False
@@ -789,11 +795,11 @@ class PenumbraOsiris(ScriptStrategyBase):
                 order['position'].reserves.r2.lo, r2_decimals)
 
             p_human = self.hi_low_to_human_readable(
-                order['position'].phi.q.hi,
-                order['position'].phi.q.lo, r1_decimals)
+                order['position'].phi.component.q.hi,
+                order['position'].phi.component.q.lo, r1_decimals)
             q_human = self.hi_low_to_human_readable(
-                order['position'].phi.p.hi,
-                order['position'].phi.p.lo, r2_decimals)
+                order['position'].phi.component.p.hi,
+                order['position'].phi.component.p.lo, r2_decimals)
             
             # Truncate to 2 decimal places
             price_human = round(p_human / q_human, 2)
@@ -804,7 +810,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 state,
                 str(round(float(reserves_1_num),2)) + ' ' + TOKEN_ADDRESS_MAP[r1_address]['symbol'],
                 str(round(float(reserves_2_num),2)) + ' ' + TOKEN_ADDRESS_MAP[r2_address]['symbol'],
-                f"{price_human} {TOKEN_ADDRESS_MAP[r2_address]['symbol']}/{TOKEN_ADDRESS_MAP[r1_address]['symbol']}"
+                f"{price_human} {TOKEN_ADDRESS_MAP[r1_address]['symbol']}/{TOKEN_ADDRESS_MAP[r2_address]['symbol']}"
             ])
 
         if not data:

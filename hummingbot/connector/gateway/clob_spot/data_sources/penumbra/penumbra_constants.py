@@ -59,7 +59,8 @@ for address in TOKEN_ADDRESS_MAP:
     TOKEN_SYMBOL_MAP[TOKEN_ADDRESS_MAP[address]["symbol"]] = {
         "address": address,
         "decimals": TOKEN_ADDRESS_MAP[address]["decimals"],
-        "baseDenom": TOKEN_ADDRESS_MAP[address]["baseDenom"]
+        "baseDenom": TOKEN_ADDRESS_MAP[address]["baseDenom"],
+        "symbol": TOKEN_ADDRESS_MAP[address]["symbol"]
     }
 
 

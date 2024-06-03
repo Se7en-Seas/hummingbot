@@ -2,11 +2,11 @@ from bidict import bidict
 
 from hummingbot.core.api_throttler.data_types import LinkedLimitWeightPair, RateLimit
 
-REST_URL = "https://api.binance.com"
+REST_URL = "https://api.binance.us"
 HEALTH_CHECK_ENDPOINT = "/api/v3/ping"
 CANDLES_ENDPOINT = "/api/v3/klines"
 
-WSS_URL = "wss://stream.binance.com:9443/ws"
+WSS_URL = "wss://stream.binance.us:9443/ws"
 
 INTERVALS = bidict({
     "1s": "1s",
