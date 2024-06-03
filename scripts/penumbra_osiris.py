@@ -57,17 +57,31 @@ class PenumbraOsiris(ScriptStrategyBase):
     the bot will cancel and replace the orders.
     """
     #! Note: Penumbra does not current support websocket connections, so the order book must be refreshed by force in each tick before execution logic can begin
-
+    
+    # --- Config knobs for the strategy --- 
+    # Account number to trade with
+    # account_number = 0
+    # TODO ^^
+    
+    # Percetage of reserves to trade (0.1 = 10%)
+    reserves1_pct = 0.1
+    reserves2_pct = 0.1
+    
+    # The pair on penumbra to trade
+    trading_pair = "penumbra-gm"
+    # How the trading pair will be priced according to binance price feeds
+    reference_pair = "BTC-USDC"
+    # ------------------------------------
+    
+    
+    
     bid_spread = 0.001
     ask_spread = 0.001
     order_refresh_time = 60
     order_amount = 0.01
     create_timestamp = 0
     exchange = "penumbra"
-    # The pair on penumbra to trade
-    trading_pair = "test_btc-test_usd"
-    # How the trading pair will be priced according to binance price feeds
-    reference_pair = "BTC-USDC"
+
     markets = {exchange: {trading_pair}}
     _pclientd_url = 'localhost:8081'
     _gateway_url = 'localhost:15888'
@@ -124,6 +138,18 @@ class PenumbraOsiris(ScriptStrategyBase):
         """Clamps a value between a minimum and maximum value."""
         return max(min_value, min(value, max_value))
 
+    def calculate_pct_reserves(self, reserve1, reserve2, reserves1_pct, reserves2_pct):
+        """
+        Calculates the amount of reserves to use for trading based on the given percentages and clamps them to 80 bits.
+        :param reserve1: The first reserve value.
+        :param reserve2: The second reserve value.
+        :return: Tuple of reserve amounts (r1, r2).
+        """
+        max_80_bits = 2**80 - 1
+        r1 = self.clamp(int(reserve1 * Decimal(str(reserves1_pct))), 0, max_80_bits)
+        r2 = self.clamp(int(reserve2 * Decimal(str(reserves2_pct))), 0, max_80_bits)
+        
+        return [r1, r2]
 
     def calculate_half_reserves(self, reserve1, reserve2):
         """
@@ -328,15 +354,16 @@ class PenumbraOsiris(ScriptStrategyBase):
             res1 = balances[self.trading_pair.split('-')[0]]['amount'] * 10**balances[self.trading_pair.split('-')[0]]['decimals']
             res2 = balances[self.trading_pair.split('-')[1]]['amount'] * 10**balances[self.trading_pair.split('-')[1]]['decimals']
 
-            half_reserve1, half_reserve2 = self.calculate_half_reserves(res1, res2)
+            #reserve1_int, reserve2_int = self.calculate_half_reserves(res1, res2)
+            reserve1_int, reserve2_int = self.calculate_pct_reserves(res1, res2, self.reserves1_pct, self.reserves2_pct)
 
-            half_reserve1 = self.int_to_lo_hi(int(half_reserve1))
-            half_reserve2 = self.int_to_lo_hi(int(half_reserve2))
+            amt_reserve1 = self.int_to_lo_hi(int(reserve1_int))
+            amt_reserve2 = self.int_to_lo_hi(int(reserve2_int))
 
-            reserves.r1.lo = half_reserve1[0]
-            reserves.r1.hi = half_reserve1[1]
-            reserves.r2.lo = half_reserve2[0]
-            reserves.r2.hi = half_reserve2[1]
+            reserves.r1.lo = amt_reserve1[0]
+            reserves.r1.hi = amt_reserve1[1]
+            reserves.r2.lo = amt_reserve2[0]
+            reserves.r2.hi = amt_reserve2[1]
 
 
             # Set other fields of Position
