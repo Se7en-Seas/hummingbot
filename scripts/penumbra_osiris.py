@@ -60,20 +60,17 @@ class PenumbraOsiris(ScriptStrategyBase):
     
     # --- Config knobs for the strategy --- 
     # Account number to trade with
-    # account_number = 0
-    # TODO ^^
+    account_number = 0
     
     # Percetage of reserves to trade (0.1 = 10%)
     reserves1_pct = 0.1
     reserves2_pct = 0.1
     
     # The pair on penumbra to trade
-    trading_pair = "penumbra-gm"
+    trading_pair = "gm-penumbra"
     # How the trading pair will be priced according to binance price feeds
     reference_pair = "BTC-USDC"
     # ------------------------------------
-    
-    
     
     bid_spread = 0.001
     ask_spread = 0.001
@@ -285,8 +282,9 @@ class PenumbraOsiris(ScriptStrategyBase):
             client = ViewService()
             transactionPlanRequest = view_pb2.TransactionPlannerRequest()
             
-            # Set fee to zero
-            transactionPlanRequest.manual_fee.amount.lo = self.int_to_lo_hi(0)[0]
+            # Set fee mode to automatic medium tier
+            # TODO: Consider configurability
+            transactionPlanRequest.auto_fee.fee_tier = 2
 
             # Assuming you have values for fee, p, q, your_trading_pair, your_reserve1, your_reserve2, and your_nonce
             # Set the TradingFunction directly
@@ -337,6 +335,9 @@ class PenumbraOsiris(ScriptStrategyBase):
                 id_1['address'])
             trading_function.pair.asset_2.inner = base64.b64decode(
                 id_2['address'])
+            
+            #print(f"Asset 1: {id_1['address']}")
+            #print(f"Asset 2: {id_2['address']}")
 
             # Set the PositionState directly
             position_state = transactionPlanRequest.position_opens[0].position.state
@@ -355,17 +356,22 @@ class PenumbraOsiris(ScriptStrategyBase):
             res2 = balances[self.trading_pair.split('-')[1]]['amount'] * 10**balances[self.trading_pair.split('-')[1]]['decimals']
 
             #reserve1_int, reserve2_int = self.calculate_half_reserves(res1, res2)
-            reserve1_int, reserve2_int = self.calculate_pct_reserves(res1, res2, self.reserves1_pct, self.reserves2_pct)
+            reserve1, reserve2 = self.calculate_pct_reserves(res1, res2, self.reserves1_pct, self.reserves2_pct)
 
-            amt_reserve1 = self.int_to_lo_hi(int(reserve1_int))
-            amt_reserve2 = self.int_to_lo_hi(int(reserve2_int))
+            reserve1 = self.int_to_lo_hi(int(reserve1))
+            reserve2 = self.int_to_lo_hi(int(reserve2))
 
-            reserves.r1.lo = amt_reserve1[0]
-            reserves.r1.hi = amt_reserve1[1]
-            reserves.r2.lo = amt_reserve2[0]
-            reserves.r2.hi = amt_reserve2[1]
-
-
+            reserves.r1.lo = reserve1[0]
+            reserves.r1.hi = reserve1[1]
+            reserves.r2.lo = reserve2[0]
+            reserves.r2.hi = reserve2[1]
+            
+            # Convert back to human readable and log just to sanity check
+            print(
+                f"Setting {self.trading_pair.split('-')[0]} in Reserve 1: {self.hi_low_to_human_readable(reserves.r1.hi, reserves.r1.lo, balances[self.trading_pair.split('-')[0]]['decimals'])}")
+            print(
+                f"Setting {self.trading_pair.split('-')[1]} Reserve 2: {self.hi_low_to_human_readable(reserves.r2.hi, reserves.r2.lo, balances[self.trading_pair.split('-')[1]]['decimals'])}")
+            
             # Set other fields of Position
             transactionPlanRequest.position_opens[0].position.close_on_fill = False
             transactionPlanRequest.position_opens[0].position.nonce = self.generate_nonce()
@@ -414,8 +420,9 @@ class PenumbraOsiris(ScriptStrategyBase):
                 start_time = (time.time())
                 transactionPlanRequest = view_pb2.TransactionPlannerRequest()
 
-                # Set fee to zero
-                transactionPlanRequest.manual_fee.amount.lo = self.int_to_lo_hi(0)[0]
+                # Set fee mode to automatic medium tier
+                # TODO: Consider configurability
+                transactionPlanRequest.auto_fee.fee_tier = 2
 
                 # Set the Position directly
                 position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
@@ -467,8 +474,9 @@ class PenumbraOsiris(ScriptStrategyBase):
                 start_time = (time.time())
                 transactionPlanRequest = view_pb2.TransactionPlannerRequest()
 
-                # Set fee to zero
-                transactionPlanRequest.manual_fee.amount.lo = self.int_to_lo_hi(0)[0]
+                # Set fee mode to automatic medium tier
+                # TODO: Consider configurability
+                transactionPlanRequest.auto_fee.fee_tier = 2
 
                 # Get where current position is (active/closed) to figure out what prefix to use
                 if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
@@ -591,8 +599,8 @@ class PenumbraOsiris(ScriptStrategyBase):
                 token_address = base64.b64encode(bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode('utf-8')
 
                 if token_address not in TOKEN_ADDRESS_MAP:
-                    print("Token not found in TOKEN_ADDRESS_MAP: ", token_address)
-                    logging.getLogger().error(f"Token not found in TOKEN_ADDRESS_MAP: {token_address}")
+                    #print("Token not found in TOKEN_ADDRESS_MAP: ", token_address)
+                    #logging.getLogger().error(f"Token not found in TOKEN_ADDRESS_MAP: {token_address}")
                     #! This will skip tokens not in the TOKEN_ADDRESS_MAP, so make sure your trading pair is in there
                     continue
             except Exception as e:
@@ -655,7 +663,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         data: List[Any] = []
 
         #! Get all balances first
-        all_balances = self.get_all_balances()
+        all_balances = self.get_all_balances(account_number=self.account_number)
 
         for asset in self.trading_pair.split('-'):
             balance = 0
