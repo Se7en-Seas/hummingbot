@@ -40,7 +40,7 @@ class PenumbraConfigMap(BaseConnectorConfigMap):
     connector: str = Field(default="penumbra", client_data=None)
 
     pclientd_url: SecretStr = Field(
-        default=...,
+        default="localhost:8081",
         client_data=ClientFieldData(
             prompt=lambda cm: "Enter your pclientd url (e.g. localhost:8081)",
             is_secure=False,
@@ -49,7 +49,7 @@ class PenumbraConfigMap(BaseConnectorConfigMap):
         ))
 
     gateway_url: SecretStr = Field(
-        default=...,
+        default="localhost:15888",
         client_data=ClientFieldData(
             prompt=lambda cm:
             "Enter your gateway url (e.g. localhost:15888)",

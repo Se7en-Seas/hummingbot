@@ -51,7 +51,7 @@ class ConnectCommand:
                     f"Would you like to replace your existing {connector_name} API key {api_key} (Yes/No)? >>> "
                 )
             else:
-                prompt = f"Would you like to replace your existing {connector_name} key (Yes/No)? >>> "
+                prompt = f"Would you like to replace your existing {connector_name} config (Yes/No)? >>> "
             answer = await self.app.prompt(prompt=prompt)
             if self.app.to_stop_config:
                 self.app.to_stop_config = False

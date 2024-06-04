@@ -94,6 +94,8 @@ class PenumbraExchange(ExchangePyBase):
         return self._pclientd_url
 
     async def _initialize_trading_pair_symbol_map(self):
+        return
+        
         try:
             markets = await self.gateway.get_all_market_metadata()
             # for us the exchange symbol is the same as the trading pair, so just make a map of keys to keys
@@ -104,6 +106,7 @@ class PenumbraExchange(ExchangePyBase):
 
     def _initialize_trading_pair_symbols_from_exchange_info(
             self, exchange_info: Dict[str, Any]):
+        return
         self._initialize_trading_pair_symbol_map()
 
     @property
@@ -151,7 +154,7 @@ class PenumbraExchange(ExchangePyBase):
         return 
 
     async def _update_balances(self):
-        print("~~~~~~~Trying to get balances~~~~~~~")
+        #print("~~~~~~~Trying to get balances~~~~~~~")
         return
         # Create new grpc.Channel + client
         channel = grpc.insecure_channel(self._pclientd_url)

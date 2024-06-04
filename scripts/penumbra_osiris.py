@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import requests
 
+from hummingbot.client.config.security import Security
+from hummingbot.connector.exchange.penumbra.penumbra_utils import KEYS
 from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1 import (
     dex_pb2,
 )
@@ -58,11 +60,18 @@ class PenumbraOsiris(ScriptStrategyBase):
     """
     #! Note: Penumbra does not current support websocket connections, so the order book must be refreshed by force in each tick before execution logic can begin
     
-    # --- Config knobs for the strategy --- 
+    # ----------- Config knobs for the strategy ---------
     # Account number to trade with
     account_number = 0
     
-    # Percetage of reserves to trade (0.1 = 10%)
+    # Your penumbra pclientd url
+    # Secretes behave oddly if its the first run or not when set (they are not encrypted on first run, but are on subsequent runs)
+    try:
+        _pclientd_url = Security.secrets_manager.decrypt_secret_value('pclientd_url', KEYS.pclientd_url.get_secret_value())
+    except:
+        _pclientd_url = "localhost:8081"
+    
+    # Percentage of your balance to set as reserves to trade (0.1 = 10%)
     reserves1_pct = 0.1
     reserves2_pct = 0.1
     
@@ -70,7 +79,13 @@ class PenumbraOsiris(ScriptStrategyBase):
     trading_pair = "penumbra-gm"
     # How the trading pair will be priced according to binance price feeds
     reference_pair = "BTC-USDC"
-    # ------------------------------------
+    
+    # TODO: Set up bid/ask spread, order refresh time, order amount, etc.
+    # -------------------------------------------------
+    if _pclientd_url == None or len(_pclientd_url.split(":")) != 2:
+        logging.getLogger().warn("pclientd url not set, assuming a default of localhost:8081 ...")
+        print("Remember to run \'connect penumbra\' to set up your connection metadata outside of the default.")
+        _pclientd_url = "localhost:8081"
     
     bid_spread = 0.001
     ask_spread = 0.001
@@ -80,8 +95,7 @@ class PenumbraOsiris(ScriptStrategyBase):
     exchange = "penumbra"
 
     markets = {exchange: {trading_pair}}
-    _pclientd_url = 'localhost:8081'
-    _gateway_url = 'localhost:15888'
+    #_gateway_url = KEYS.gateway_url.get_secret_value()
 
     # Override to skip the ready check which depends on websocket connection
     def tick(self, timestamp: float):
@@ -92,33 +106,40 @@ class PenumbraOsiris(ScriptStrategyBase):
         :param timestamp: current tick timestamp
         """
         self.on_tick()
+    
+    # ! Implement graceful on stop behavior (cancel all orders, withdraw from all positions)    
+    def on_stop(self):
+        print("Stopping strategy...")
 
     def on_tick(self):
         # Only run on tick if order_refresh_time is passed to not consume too many resources
-        if self.create_timestamp <= self.current_timestamp - self.order_refresh_time:
-            total_loop_time = time.time()
-            logging.getLogger().info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Refreshing order book ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+        try: 
+            if self.create_timestamp <= self.current_timestamp - self.order_refresh_time:
+                total_loop_time = time.time()
+                logging.getLogger().info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Refreshing order book ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-            logging.getLogger().info("1. Canceling any outstanding orders...")
-            start_time = (time.time())
-            self.cancel_all_orders()
-            print(f"TOTAL Time to cancel all orders: {(time.time()) - start_time}")
-            start_time = (time.time())
+                logging.getLogger().info("1. Canceling any outstanding orders...")
+                start_time = (time.time())
+                self.cancel_all_orders()
+                print(f"TOTAL Time to cancel all orders: {(time.time()) - start_time}")
+                start_time = (time.time())
 
-            logging.getLogger().info("2. Checking price feeds...")
-            bid_ask: List[float] = self.create_proposal()
-            print(f"TOTAL Time to get price feeds: {(time.time()) - start_time}")
-            logging.getLogger().info(f"3. Best bid: {bid_ask[0]} and ask: {bid_ask[1]}")
-            start_time = (time.time())
+                logging.getLogger().info("2. Checking price feeds...")
+                bid_ask: List[float] = self.create_proposal()
+                print(f"TOTAL Time to get price feeds: {(time.time()) - start_time}")
+                logging.getLogger().info(f"3. Best bid: {bid_ask[0]} and ask: {bid_ask[1]}")
+                start_time = (time.time())
 
-            logging.getLogger().info("4. Creating liquidity position...")
-            self.make_liquidity_position(bid_ask)
-            print(f"TOTAL Time to create liquidity position: {(time.time()) - start_time}")
+                logging.getLogger().info("4. Creating liquidity position...")
+                self.make_liquidity_position(bid_ask)
+                print(f"TOTAL Time to create liquidity position: {(time.time()) - start_time}")
 
-            self.create_timestamp = self.order_refresh_time + self.current_timestamp
-            print(
-                f"~~~~~~~~~ TOTAL Time to refresh order book: {(time.time()) - total_loop_time} ~~~~~~~~~"
-            )
+                self.create_timestamp = self.order_refresh_time + self.current_timestamp
+                print(
+                    f"~~~~~~~~~ TOTAL Time to refresh order book: {(time.time()) - total_loop_time} ~~~~~~~~~"
+                )
+        except Exception as e:
+            logging.getLogger().error(f"Error on tick: {str(e)}")
 
     def create_proposal(self) -> List[float]:
         try:
@@ -342,8 +363,8 @@ class PenumbraOsiris(ScriptStrategyBase):
             trading_function.pair.asset_2.inner = base64.b64decode(
                 asset_2['address'])
             
-            print(f"Asset 1: {asset_1['address']}")
-            print(f"Asset 2: {asset_2['address']}")
+            #print(f"Asset 1: {asset_1['address']}")
+            #print(f"Asset 2: {asset_2['address']}")
 
             # Set the PositionState directly
             position_state = transactionPlanRequest.position_opens[0].position.state
