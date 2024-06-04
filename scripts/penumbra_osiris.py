@@ -96,6 +96,8 @@ class PenumbraOsiris(ScriptStrategyBase):
 
     markets = {exchange: {trading_pair}}
     #_gateway_url = KEYS.gateway_url.get_secret_value()
+    
+    print("Executing strategy...")
 
     # Override to skip the ready check which depends on websocket connection
     def tick(self, timestamp: float):
