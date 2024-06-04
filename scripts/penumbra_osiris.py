@@ -112,6 +112,8 @@ class PenumbraOsiris(ScriptStrategyBase):
     # ! Implement graceful on stop behavior (cancel all orders, withdraw from all positions)    
     def on_stop(self):
         print("Stopping strategy...")
+        self.cancel_all_orders()
+        print("Strategy stopped.")
 
     def on_tick(self):
         # Only run on tick if order_refresh_time is passed to not consume too many resources
