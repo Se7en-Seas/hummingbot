@@ -38,7 +38,6 @@ conda activate hummingbot
 ```bash
 make install
 ./compile # Assuming you're still in the base hummingbot repo directory
-conda activate hummingbot
 ```
 
 5. Start hummingbot and run the penumbra osiris bot :3
