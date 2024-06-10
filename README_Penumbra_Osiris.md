@@ -17,13 +17,20 @@ grpcurl -plaintext -d '{"account_filter": {"account": 0}}'     127.0.0.1:8081 pe
 ```bash
 apt-get install libgl1-mesa-glx libegl1-mesa libxrandr2 libxrandr2 libxss1 libxcursor1 libxcomposite1 libasound2 libxi6 libxtst6
 wget https://repo.anaconda.com/archive/Anaconda3-2023.09-0-Linux-x86_64.sh
-bash Anaconda3-2023.09-0-Linux-x86_64.sh # Accept the lisence agreement and install 
+bash Anaconda3-2023.09-0-Linux-x86_64.sh # Accept the lisence agreement and install
+# install miniconda
+mkdir -p ~/miniconda3
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+rm -rf ~/miniconda3/miniconda.sh
+~/miniconda3/bin/conda init bash
 ```
+
 3.5 Set up conda for your terminal, here is a minimal bash example
 ```bash
 export PATH=/root/anaconda3/bin:$PATH
-conda init bash
 source ~/.bashrc
+conda init bash
 conda activate hummingbot
 ```
 
