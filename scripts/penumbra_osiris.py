@@ -340,10 +340,10 @@ class PenumbraOsiris(ScriptStrategyBase):
             trading_function = transactionPlanRequest.position_opens.add().position.phi
 
             # if assets are swapped midPrice needs to be inverted
-            midPrice = (Decimal(bid_ask[0] + bid_ask[1]) / 2)
-            
-            if self.swapped_assets:
-                midPrice = Decimal(1) / midPrice
+            if not self.swapped_assets:
+                midPrice = (Decimal(bid_ask[0] + bid_ask[1]) / 2)
+            else:
+                midPrice =(1/Decimal(bid_ask[0] + 1/bid_ask[1]) / 2)
             
             scaling_factor = Decimal('1000')
             midPrice = midPrice * scaling_factor
