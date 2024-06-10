@@ -343,7 +343,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             if not self.swapped_assets:
                 midPrice = (Decimal(bid_ask[0] + bid_ask[1]) / 2)
             else:
-                midPrice =(1/Decimal(bid_ask[0] + 1/bid_ask[1]) / 2)
+                midPrice =1/(Decimal(bid_ask[0] + bid_ask[1]) / 2)
             
             scaling_factor = Decimal('1000')
             midPrice = midPrice * scaling_factor
@@ -367,7 +367,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             if not self.swapped_assets:
                 difference = scaling_factor * abs(bid_ask[1] - bid_ask[0])
             else:
-                difference = scaling_factor * abs(1 / bid_ask[1] - 1 / bid_ask[0])
+                difference = scaling_factor * (1 / abs(bid_ask[1] - bid_ask[0]))
                 
             fraction = difference / midPrice
             # max of 50% fee, min of 100 bps (1%)
