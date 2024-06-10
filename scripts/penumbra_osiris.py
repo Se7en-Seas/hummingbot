@@ -97,9 +97,6 @@ class PenumbraOsiris(ScriptStrategyBase):
     markets = {exchange: {trading_pair}}
     #_gateway_url = KEYS.gateway_url.get_secret_value()
     
-    # keep track of whether assets were swapped due to lexographic order in asset ordering
-    swapped_assets = False
-    
     print("Executing strategy...")
 
     # Override to skip the ready check which depends on websocket connection
@@ -307,6 +304,9 @@ class PenumbraOsiris(ScriptStrategyBase):
         try:
             start_time = (time.time())
             
+            # keep track of whether assets were swapped due to lexographic order in asset ordering
+            swapped_assets = False
+            
             # Get asset ids from constants file
             asset_1 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[0]]
             asset_2 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[1]]
@@ -325,25 +325,23 @@ class PenumbraOsiris(ScriptStrategyBase):
                 tmp = asset_1
                 asset_1 = asset_2
                 asset_2 = tmp
-                self.swapped_assets = True
+                swapped_assets = True
+                
+            #print("!!!!!!!  Swapped assets? : ", swapped_assets)
 
             client = ViewService()
             transactionPlanRequest = view_pb2.TransactionPlannerRequest()
             
             # Set fee mode to automatic medium tier
             # TODO: Consider configurability
-            transactionPlanRequest.auto_fee.fee_tier = 2
+            transactionPlanRequest.auto_fee.fee_tier = 3
             transactionPlanRequest.source.account = self.account_number
 
             # Assuming you have values for fee, p, q, your_trading_pair, your_reserve1, your_reserve2, and your_nonce
             # Set the TradingFunction directly
             trading_function = transactionPlanRequest.position_opens.add().position.phi
 
-            # if assets are swapped midPrice needs to be inverted
-            if not self.swapped_assets:
-                midPrice = (Decimal(bid_ask[0] + bid_ask[1]) / 2)
-            else:
-                midPrice =1/(Decimal(bid_ask[0] + bid_ask[1]) / 2)
+            midPrice = Decimal(bid_ask[0] + bid_ask[1]) / 2
             
             scaling_factor = Decimal('1000')
             midPrice = midPrice * scaling_factor
@@ -358,16 +356,15 @@ class PenumbraOsiris(ScriptStrategyBase):
             trading_function.component.p.lo = p_val[0]
             trading_function.component.p.hi = p_val[1]
 
-            q_val = self.int_to_lo_hi(int(midPrice))
+            # Q needs to be adjusted for the decimal difference between the two assets
+            decimal_diff = abs(asset_2['decimals'] - asset_1['decimals'])
+            q_val = self.int_to_lo_hi(int(midPrice * 10**decimal_diff))
 
             trading_function.component.q.lo = q_val[0]
             trading_function.component.q.hi = q_val[1]
 
             # Calculate spread:
-            if not self.swapped_assets:
-                difference = scaling_factor * abs(bid_ask[1] - bid_ask[0])
-            else:
-                difference = scaling_factor * (1 / abs(bid_ask[1] - bid_ask[0]))
+            difference = scaling_factor * abs(bid_ask[1] - bid_ask[0])
                 
             fraction = difference / midPrice
             # max of 50% fee, min of 100 bps (1%)
@@ -443,7 +440,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             broadcast_request.transaction.CopyFrom(tx_to_broadcast)
             broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
             
-            logging.getLogger().info(f"Order created at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
+            logging.getLogger().info(f"Order detected at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
             print(f"Time to get LP broadcast: {(time.time()) - start_time}")
             #breakpoint()
 
@@ -467,7 +464,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
                 # Set fee mode to automatic medium tier
                 # TODO: Consider configurability
-                transactionPlanRequest.auto_fee.fee_tier = 2
+                transactionPlanRequest.auto_fee.fee_tier = 3
                 transactionPlanRequest.source.account = self.account_number
 
                 # Set the Position directly
@@ -522,7 +519,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
                 # Set fee mode to automatic medium tier
                 # TODO: Consider configurability
-                transactionPlanRequest.auto_fee.fee_tier = 2
+                transactionPlanRequest.auto_fee.fee_tier = 3
                 transactionPlanRequest.source.account = self.account_number
 
                 # Get where current position is (active/closed) to figure out what prefix to use
