@@ -76,9 +76,9 @@ class PenumbraOsiris(ScriptStrategyBase):
     reserves2_pct = 0.1
     
     # The pair on penumbra to trade
-    trading_pair = "penumbra-gm"
+    trading_pair = "test_atom-test_usd"
     # How the trading pair will be priced according to binance price feeds
-    reference_pair = "BTC-USDC"
+    reference_pair = "ATOM-USDT"
     
     # TODO: Set up bid/ask spread, order refresh time, order amount, etc.
     # -------------------------------------------------
@@ -96,6 +96,9 @@ class PenumbraOsiris(ScriptStrategyBase):
 
     markets = {exchange: {trading_pair}}
     #_gateway_url = KEYS.gateway_url.get_secret_value()
+    
+    # keep track of whether assets were swapped due to lexographic order in asset ordering
+    swapped_assets = False
     
     print("Executing strategy...")
 
@@ -303,6 +306,26 @@ class PenumbraOsiris(ScriptStrategyBase):
     def make_liquidity_position(self, bid_ask: List[int]):
         try:
             start_time = (time.time())
+            
+            # Get asset ids from constants file
+            asset_1 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[0]]
+            asset_2 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[1]]
+
+            if asset_1 is None:
+                logging.getLogger().error(
+                    f"Asset {self.trading_pair.split('-')[0]} not found in constants file"
+                )
+            if asset_2 is None:
+                logging.getLogger().error(
+                    f"Asset {self.trading_pair.split('-')[1]} not found in constants file"
+                )
+            # Asset1 must be < Asset2 according to their lexographic order on byte strings
+            # https://buf.build/penumbra-zone/penumbra/docs/db38dcb505fd43769a072925543bc500:penumbra.core.component.dex.v1#penumbra.core.component.dex.v1.TradingFunction
+            if asset_1['address'] > asset_2['address']:
+                tmp = asset_1
+                asset_1 = asset_2
+                asset_2 = tmp
+                self.swapped_assets = True
 
             client = ViewService()
             transactionPlanRequest = view_pb2.TransactionPlannerRequest()
@@ -310,12 +333,18 @@ class PenumbraOsiris(ScriptStrategyBase):
             # Set fee mode to automatic medium tier
             # TODO: Consider configurability
             transactionPlanRequest.auto_fee.fee_tier = 2
+            transactionPlanRequest.source.account = self.account_number
 
             # Assuming you have values for fee, p, q, your_trading_pair, your_reserve1, your_reserve2, and your_nonce
             # Set the TradingFunction directly
             trading_function = transactionPlanRequest.position_opens.add().position.phi
 
-            midPrice = Decimal(bid_ask[0] + bid_ask[1]) / 2
+            # if assets are swapped midPrice needs to be inverted
+            midPrice = (Decimal(bid_ask[0] + bid_ask[1]) / 2)
+            
+            if self.swapped_assets:
+                midPrice = Decimal(1) / midPrice
+            
             scaling_factor = Decimal('1000')
             midPrice = midPrice * scaling_factor
 
@@ -335,32 +364,17 @@ class PenumbraOsiris(ScriptStrategyBase):
             trading_function.component.q.hi = q_val[1]
 
             # Calculate spread:
-            difference = scaling_factor * abs(bid_ask[1] - bid_ask[0])
+            if not self.swapped_assets:
+                difference = scaling_factor * abs(bid_ask[1] - bid_ask[0])
+            else:
+                difference = scaling_factor * abs(1 / bid_ask[1] - 1 / bid_ask[0])
+                
             fraction = difference / midPrice
             # max of 50% fee, min of 100 bps (1%)
             spread = fraction * 100 * 100
             spread = max(100, min(spread, 5000))
 
             trading_function.component.fee = int(spread)
-
-            # Get asset ids from constants file
-            asset_1 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[0]]
-            asset_2 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[1]]
-
-            if asset_1 is None:
-                logging.getLogger().error(
-                    f"Asset {self.trading_pair.split('-')[0]} not found in constants file"
-                )
-            if asset_2 is None:
-                logging.getLogger().error(
-                    f"Asset {self.trading_pair.split('-')[1]} not found in constants file"
-                )
-            # Asset1 must be < Asset2 according to their lexographic order on byte strings
-            # https://buf.build/penumbra-zone/penumbra/docs/db38dcb505fd43769a072925543bc500:penumbra.core.component.dex.v1#penumbra.core.component.dex.v1.TradingFunction
-            if asset_1['address'] > asset_2['address']:
-                tmp = asset_1
-                asset_1 = asset_2
-                asset_2 = tmp
 
             trading_function.pair.asset_1.inner = base64.b64decode(
                 asset_1['address'])
@@ -454,6 +468,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 # Set fee mode to automatic medium tier
                 # TODO: Consider configurability
                 transactionPlanRequest.auto_fee.fee_tier = 2
+                transactionPlanRequest.source.account = self.account_number
 
                 # Set the Position directly
                 position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
@@ -508,6 +523,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 # Set fee mode to automatic medium tier
                 # TODO: Consider configurability
                 transactionPlanRequest.auto_fee.fee_tier = 2
+                transactionPlanRequest.source.account = self.account_number
 
                 # Get where current position is (active/closed) to figure out what prefix to use
                 if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
