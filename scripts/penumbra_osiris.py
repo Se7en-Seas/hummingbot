@@ -122,7 +122,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 total_loop_time = time.time()
                 logging.getLogger().info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Refreshing order book ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-                logging.getLogger().info("1. Canceling any outstanding orders...")
+                logging.getLogger().info("1. Cancelling any outstanding orders...")
                 start_time = (time.time())
                 self.cancel_all_orders()
                 print(f"TOTAL Time to cancel all orders: {(time.time()) - start_time}")
@@ -269,7 +269,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 
     def build_and_broadcast_tx(self, client, broadcast_request):
         # Service will await detection on chain
-        broadcast_request.await_detection = True
+        #broadcast_request.await_detection = True
 
         logging.getLogger().info("Creating order, waiting for broadcast to return...")
         broadcast_response_iterator = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
@@ -300,6 +300,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 break
             except Exception as e:
                 print(f"Error processing response: {e}")
+                logging.getLogger().info(f"Error processing response!")
                 logging.getLogger().info(f"Error processing (next) response: {e}")
                 time.sleep(1)
 
@@ -467,7 +468,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         logging.getLogger().info("Cancelling old orders...")
         active_orders, closed_orders = self.get_orders()
         print(f"Time to get orders: {(time.time()) - start_time}")
-        logging.getLogger().info(f"Number of orders to close: (active) {len(active_orders)} and (closed) {len(closed_orders)}")
+        logging.getLogger().info(f"Number of orders to withdraw: (active) {len(active_orders)} and (closed) {len(closed_orders)}")
 
         client = ViewService()
         # Iterate over dictionary keys
