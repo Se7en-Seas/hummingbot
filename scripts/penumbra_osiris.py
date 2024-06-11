@@ -637,7 +637,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         start_time = (time.time())
         logging.getLogger().info("Formatting balances...")
         for response in responses:
-            #print(response)
+            print(response)
 
             try: 
                 balance = {
@@ -690,7 +690,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             # amount's are uint 128 bit https://buf.build/penumbra-zone/penumbra/docs/300a488c79c9490d86cf09e1eceff593:penumbra.core.num.v1alpha1#penumbra.core.num.v1alpha1.Amount
             logging.getLogger().info(f"Raw Balance for {symbol}: hi{balance['amount'].hi} lo{balance['amount'].lo}")
             balance = Decimal(str(self.hi_low_to_human_readable(response.balance_view.known_asset_id.amount.hi, response.balance_view.known_asset_id.amount.lo, decimals)))
-            #logging.getLogger().info(f"Balance for {symbol}: {balance}")
+            logging.getLogger().info(f"Formatted Balance for {symbol}: {balance}")
 
             balance_dict[symbol] = {
                 "asset_id_str":
