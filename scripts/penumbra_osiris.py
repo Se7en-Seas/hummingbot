@@ -269,9 +269,9 @@ class PenumbraOsiris(ScriptStrategyBase):
                 
     def build_and_broadcast_tx(self, client, broadcast_request):
         # Service will await detection on chain
-        #broadcast_request.await_detection = True
+        broadcast_request.await_detection = True
 
-        logging.getLogger().info("Creating order, waiting for broadcast to return...")
+        logging.getLogger().info("Creating tx, waiting for broadcast to return...")
         broadcast_response_iterator = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
         broadcast_resp = None
         
@@ -302,7 +302,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 print(f"Error processing response: {e}")
                 logging.getLogger().info(f"Error processing response!")
                 logging.getLogger().info(f"Error processing (next) response: {e}")
-                time.sleep(1)
+                return None
 
     # https://guide.penumbra.zone/main/pclientd/build_transaction.html
     def make_liquidity_position(self, bid_ask: List[int]):
@@ -455,6 +455,10 @@ class PenumbraOsiris(ScriptStrategyBase):
             broadcast_request.transaction.CopyFrom(tx_to_broadcast)
             broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
             
+            if broadcast_response is None:
+                logging.getLogger().error("Error broadcasting transaction, check logs, attempting again next tick...")
+                return
+            
             logging.getLogger().info(f"Order detected at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
             print(f"Time to get LP broadcast: {(time.time()) - start_time}")
             #breakpoint()
@@ -520,7 +524,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 logging.getLogger().info("Deleting order..")
                 broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
                 logging.getLogger().info(
-                    f"Order deleted at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}"
+                    f"Order cancelled at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}"
                 )
                 print(f"Time to get Cancel broadcast: {(time.time()) - start_time}")
 
