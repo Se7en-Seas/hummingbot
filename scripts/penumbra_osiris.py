@@ -223,7 +223,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         return [lo, hi]
 
     def hi_low_to_human_readable(self, hi, lo, decimals):
-        return ((hi << 64) + lo) / (10**decimals)
+        return ((hi << 64) | lo) / (10**decimals)
 
     def generate_nonce(self):
         """Generate a 32-byte nonce."""
@@ -624,6 +624,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         request = view_pb2.BalancesRequest()
         request.account_filter.account = account_number
         query_client = QueryService()
+        logging.getLogger().info(f"BalanceRequest: {request}")
 
         start_time = (time.time())
         logging.getLogger().info("Getting all balances...")
