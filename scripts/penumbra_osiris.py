@@ -271,7 +271,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         # Service will await detection on chain
         broadcast_request.await_detection = True
 
-        logging.getLogger().info("Creating order...")
+        logging.getLogger().info("Creating order, waiting for broadcast to return...")
         broadcast_response_iterator = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
         broadcast_resp = None
         
@@ -287,22 +287,27 @@ class PenumbraOsiris(ScriptStrategyBase):
                     return broadcast_resp.confirmed
                 elif status_field == "broadcast_success":
                     print("Broadcasted, but awaiting confirmation...")
+                    logging.getLogger().info("Broadcasted, but awaiting confirmation...")
                 else:
                     print("Unexpected response: ", broadcast_resp)
+                    logging.getLogger().info("Unexpected response: ", broadcast_resp)
                     return None
 
             except StopIteration:
                 # Handle end of iterator (shouldn't happen if server is streaming)
                 print("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
+                logging.getLogger().info("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
                 break
             except Exception as e:
                 print(f"Error processing response: {e}")
+                logging.getLogger().info(f"Error processing (next) response: {e}")
                 time.sleep(1)
 
     # https://guide.penumbra.zone/main/pclientd/build_transaction.html
     def make_liquidity_position(self, bid_ask: List[int]):
         try:
             start_time = (time.time())
+            logging.getLogger().info("Beginning liquidity position creation...")
             
             # keep track of whether assets were swapped due to lexographic order in asset ordering
             swapped_assets = False
@@ -327,10 +332,13 @@ class PenumbraOsiris(ScriptStrategyBase):
                 asset_2 = tmp
                 swapped_assets = True
                 
+            logging.getLogger().info(f"Assets configured...")
+                
             #print("!!!!!!!  Swapped assets? : ", swapped_assets)
 
             client = ViewService()
             transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+            logging.getLogger().info("Planning transaction...")
             
             # Set fee mode to automatic medium tier
             # TODO: Consider configurability
@@ -388,6 +396,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             # Set the Reserves directly
             reserves = transactionPlanRequest.position_opens[0].position.reserves
 
+            logging.getLogger().info("Getting palances for reserves...")
             # TODO: really should be available balances
             # Get all balances
             b_time = (time.time())
@@ -421,10 +430,14 @@ class PenumbraOsiris(ScriptStrategyBase):
             transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
 
             print(f"Time to get LP transaction plan: {(time.time()) - start_time}")
+            logging.getLogger().info(f"Time to get LP transaction plan: {(time.time()) - start_time}")
             start_time = (time.time())
 
+            logging.getLogger().info("Authorizing transaction...")
             # Authorize the tx
             authorized_resp = self.authorize_tx(transactionPlanResponse)
+            
+            logging.getLogger().info(f"Witnessing and building transaction...")
 
             # Witness & Build
             wit_and_build_req = view_pb2.WitnessAndBuildRequest()
@@ -436,6 +449,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             start_time = (time.time())
 
             # Broadcast
+            logging.getLogger().info("Broadcasting transaction...")
             broadcast_request = view_pb2.BroadcastTransactionRequest()
             broadcast_request.transaction.CopyFrom(tx_to_broadcast)
             broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
@@ -450,18 +464,22 @@ class PenumbraOsiris(ScriptStrategyBase):
     # Cancel & withdraw from all orders
     def cancel_all_orders(self):
         start_time = (time.time())
+        logging.getLogger().info("Cancelling old orders...")
         active_orders, closed_orders = self.get_orders()
         print(f"Time to get orders: {(time.time()) - start_time}")
+        logging.getLogger().info(f"Number of orders to close: (active) {len(active_orders)} and (closed) {len(closed_orders)}")
 
         client = ViewService()
         # Iterate over dictionary keys
         order_key_list = list(active_orders.keys())
 
         for order_key in order_key_list:
+            logging.getLogger().info(f"Closing order: {order_key}")
             try:
                 start_time = (time.time())
                 transactionPlanRequest = view_pb2.TransactionPlannerRequest()
 
+                logging.getLogger().info("Planning transaction...")
                 # Set fee mode to automatic medium tier
                 # TODO: Consider configurability
                 transactionPlanRequest.auto_fee.fee_tier = 3
@@ -476,11 +494,14 @@ class PenumbraOsiris(ScriptStrategyBase):
                 print(f"Time to get Cancel transaction plan: {(time.time()) - start_time}")
                 start_time = (time.time())
 
+                logging.getLogger().info("Authorizing transaction...")
                 # Authorize the tx
                 authorized_resp = self.authorize_tx(transactionPlanResponse)
                 print(f"Time to get Cancel authorization: {(time.time()) - start_time}")
                 start_time = (time.time())
 
+
+                logging.getLogger().info("Witnessing and building transaction...")
                 # Witness & Build
                 wit_and_build_req = view_pb2.WitnessAndBuildRequest()
                 wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
@@ -491,6 +512,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 start_time = (time.time())
 
                 # Broadcast
+                logging.getLogger().info("Broadcasting transaction...")
                 broadcast_request = view_pb2.BroadcastTransactionRequest()
                 broadcast_request.transaction.CopyFrom(tx_to_broadcast)
 
@@ -599,12 +621,14 @@ class PenumbraOsiris(ScriptStrategyBase):
         start_time = (time.time())
         logging.getLogger().info("Getting all balances...")
         responses = client.Balances(request=request,target=self._pclientd_url,insecure=True)
+        logging.getLogger().info(f"Time to get Balances: {(time.time()) - start_time}")
         print(f"Time to get Balances: {(time.time()) - start_time}")
         #logging.getLogger().info(f"Time to get Balances: {(time.time()) - start_time}")
 
         balance_dict = {}
 
         start_time = (time.time())
+        logging.getLogger().info("Formatting balances...")
         for response in responses:
             #print(response)
 
@@ -675,6 +699,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             }
             #logging.getLogger().info(f"Running balance dict: {balance_dict[symbol]}")
         print(f"Time to query all denoms & process data: {(time.time()) - start_time}")
+        logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
         #logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
 
         '''
@@ -689,11 +714,12 @@ class PenumbraOsiris(ScriptStrategyBase):
         }
         '''
         print("Balances: ")
+        logging.getLogger().info("Balances: ")
         for key in balance_dict:
             print(key, str(balance_dict[key]['amount']))
+            logging.getLogger().info(f"{key}: {str(balance_dict[key]['amount'])}")
             
         #pprint(balance_dict)
-        #logging.getLogger().info("Balances: ")
         #logging.getLogger().info(balance_dict)
         return balance_dict
 
