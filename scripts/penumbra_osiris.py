@@ -639,7 +639,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         for response in responses:
             print(response)
             
-            if response.account_address.index != account_number:
+            if response.account_address.decoded.index != account_number:
                 continue
 
             try: 
