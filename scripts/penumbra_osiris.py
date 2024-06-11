@@ -114,7 +114,7 @@ class PenumbraOsiris(ScriptStrategyBase):
     # ! Implement graceful on stop behavior (cancel all orders, withdraw from all positions)    
     def on_stop(self):
         print("Stopping strategy...")
-        self.cancel_all_orders()
+        self.cancel_all_orders(self.account_number)
         print("Strategy stopped.")
 
     def on_tick(self):
@@ -126,7 +126,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
                 logging.getLogger().info("1. Cancelling any outstanding orders...")
                 start_time = (time.time())
-                self.cancel_all_orders()
+                self.cancel_all_orders(self.account_number)
                 print(f"TOTAL Time to cancel all orders: {(time.time()) - start_time}")
                 start_time = (time.time())
 
@@ -137,7 +137,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 start_time = (time.time())
 
                 logging.getLogger().info("4. Creating liquidity position...")
-                self.make_liquidity_position(bid_ask)
+                self.make_liquidity_position(bid_ask, self.account_number)
                 print(f"TOTAL Time to create liquidity position: {(time.time()) - start_time}")
 
                 self.create_timestamp = self.order_refresh_time + self.current_timestamp
@@ -223,7 +223,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         return [lo, hi]
 
     def hi_low_to_human_readable(self, hi, lo, decimals):
-        return ((hi << 64) | lo) / (10**decimals)
+        return ((hi << 64) + lo) / (10**decimals)
 
     def generate_nonce(self):
         """Generate a 32-byte nonce."""
@@ -307,7 +307,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 return None
 
     # https://guide.penumbra.zone/main/pclientd/build_transaction.html
-    def make_liquidity_position(self, bid_ask: List[int]):
+    def make_liquidity_position(self, bid_ask: List[int], account_number: int = 0):
         try:
             start_time = (time.time())
             logging.getLogger().info("Beginning liquidity position creation...")
@@ -346,7 +346,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             # Set fee mode to automatic medium tier
             # TODO: Consider configurability
             transactionPlanRequest.auto_fee.fee_tier = 3
-            transactionPlanRequest.source.account = self.account_number
+            transactionPlanRequest.source.account = account_number
 
             # Assuming you have values for fee, p, q, your_trading_pair, your_reserve1, your_reserve2, and your_nonce
             # Set the TradingFunction directly
@@ -403,7 +403,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             # TODO: really should be available balances
             # Get all balances
             b_time = (time.time())
-            balances = self.get_all_balances()
+            balances = self.get_all_balances(account_number)
             print(f"Sub query time to get balances: {(time.time()) - b_time}")
 
             res1 = balances[asset_1["symbol"]]['amount'] * 10**balances[asset_1["symbol"]]['decimals']
@@ -469,7 +469,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             logging.getLogger().error(f"Error making liquidity position: {str(e)}")
 
     # Cancel & withdraw from all orders
-    def cancel_all_orders(self):
+    def cancel_all_orders(self, account_number: int = 0):
         start_time = (time.time())
         logging.getLogger().info("Cancelling old orders...")
         active_orders, closed_orders = self.get_orders()
@@ -490,7 +490,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 # Set fee mode to automatic medium tier
                 # TODO: Consider configurability
                 transactionPlanRequest.auto_fee.fee_tier = 3
-                transactionPlanRequest.source.account = self.account_number
+                transactionPlanRequest.source.account = account_number
 
                 # Set the Position directly
                 position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
@@ -549,7 +549,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 # Set fee mode to automatic medium tier
                 # TODO: Consider configurability
                 transactionPlanRequest.auto_fee.fee_tier = 3
-                transactionPlanRequest.source.account = self.account_number
+                transactionPlanRequest.source.account = account_number
 
                 # Get where current position is (active/closed) to figure out what prefix to use
                 if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
@@ -622,10 +622,10 @@ class PenumbraOsiris(ScriptStrategyBase):
         # Create new grpc.Channel + client
         client = ViewService()
         request = view_pb2.BalancesRequest()
-        request.account_filter = keys_pb2.AddressIndex()
         request.account_filter.account = account_number
         query_client = QueryService()
         logging.getLogger().info(f"BalanceRequest: {request}")
+        logging.getLogger().info(f"Account number: {account_number}")
 
         start_time = (time.time())
         logging.getLogger().info("Getting all balances...")
@@ -638,12 +638,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
         start_time = (time.time())
         logging.getLogger().info("Formatting balances...")
-        for response in responses:
-            print(response)
-            
-            if response.account_address.decoded.index != account_number:
-                continue
-
+        for response in responses:    
             try: 
                 balance = {
                     "amount":
@@ -689,27 +684,36 @@ class PenumbraOsiris(ScriptStrategyBase):
             
             #logging.getLogger().info(f"Token found in TOKEN_ADDRESS_MAP: {token_address}")
 
-            decimals = TOKEN_ADDRESS_MAP[token_address]['decimals']
-            symbol = TOKEN_ADDRESS_MAP[token_address]['symbol']
+            try:
+                decimals = TOKEN_ADDRESS_MAP[token_address]['decimals']
+                symbol = TOKEN_ADDRESS_MAP[token_address]['symbol']
+            except Exception as e:
+                logging.getLogger().error(f"Could not find token in TOKEN_ADDRESS_MAP, disregarding... {str(e)}")
+                logging.getLogger().error(f"Token address map: {TOKEN_ADDRESS_MAP}")
+                logging.getLogger().error(f"Token address: {token_address}")
 
             # amount's are uint 128 bit https://buf.build/penumbra-zone/penumbra/docs/300a488c79c9490d86cf09e1eceff593:penumbra.core.num.v1alpha1#penumbra.core.num.v1alpha1.Amount
-            logging.getLogger().info(f"Raw Balance for {symbol}: hi{balance['amount'].hi} lo{balance['amount'].lo}")
+            #logging.getLogger().info(f"Raw Balance for {symbol}: hi{balance['amount'].hi} lo{balance['amount'].lo}")
             balance = Decimal(str(self.hi_low_to_human_readable(response.balance_view.known_asset_id.amount.hi, response.balance_view.known_asset_id.amount.lo, decimals)))
-            logging.getLogger().info(f"Formatted Balance for {symbol}: {balance}")
+            #logging.getLogger().info(f"Formatted Balance for {symbol}: {balance}")
 
-            balance_dict[symbol] = {
-                "asset_id_str":
-                base64.b64encode(
-                    bytes.fromhex(
-                        response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode(
-                            'utf-8'),
-                "asset_id_bytes":
-                bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex()),
-                "amount":
-                balance,
-                "decimals":
-                decimals,
-            }
+            # If the asset is already in the balance dict, add the amount to it, otherwise create a new entry
+            if symbol in balance_dict:
+                balance_dict[symbol]['amount'] += balance
+            else:
+                balance_dict[symbol] = {
+                    "asset_id_str":
+                    base64.b64encode(
+                        bytes.fromhex(
+                            response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode(
+                                'utf-8'),
+                    "asset_id_bytes":
+                    bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex()),
+                    "amount":
+                    balance,
+                    "decimals":
+                    decimals,
+                }
             #logging.getLogger().info(f"Running balance dict: {balance_dict[symbol]}")
         print(f"Time to query all denoms & process data: {(time.time()) - start_time}")
         logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
@@ -726,8 +730,8 @@ class PenumbraOsiris(ScriptStrategyBase):
                     }
         }
         '''
-        print("Balances: ")
-        logging.getLogger().info("Balances: ")
+        print("Final Balances: ")
+        logging.getLogger().info("Final Balances: ")
         for key in balance_dict:
             print(key, str(balance_dict[key]['amount']))
             logging.getLogger().info(f"{key}: {str(balance_dict[key]['amount'])}")
@@ -736,7 +740,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         #logging.getLogger().info(balance_dict)
         return balance_dict
 
-    def get_balance_df(self):
+    def get_balance_df(self, account_number: int = 0):
         """
         Returns a data frame for all asset balances for displaying purpose.
         """
@@ -746,7 +750,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         data: List[Any] = []
 
         #! Get all balances first
-        all_balances = self.get_all_balances(account_number=self.account_number)
+        all_balances = self.get_all_balances(account_number=account_number)
 
         for asset in self.trading_pair.split('-'):
             balance = 0
@@ -914,7 +918,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         # Assume this method exists and fetches some warning lines
         # warning_lines.extend(self.network_warning(self.get_market_trading_pair_tuples()))
 
-        balance_df = self.get_balance_df()
+        balance_df = self.get_balance_df(self.account_number)
         lines.extend(["", "  Balances:"] + [
             "    " + line
             for line in self.format_dataframe(balance_df).split("\n")
