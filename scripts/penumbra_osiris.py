@@ -70,6 +70,8 @@ class PenumbraOsiris(ScriptStrategyBase):
         _pclientd_url = Security.secrets_manager.decrypt_secret_value('pclientd_url', KEYS.pclientd_url.get_secret_value())
     except:
         _pclientd_url = "localhost:8081"
+        
+    logging.getLogger().info(f"Using pclientd url: {_pclientd_url}")
     
     # Percentage of your balance to set as reserves to trade (0.1 = 10%)
     reserves1_pct = 0.1
