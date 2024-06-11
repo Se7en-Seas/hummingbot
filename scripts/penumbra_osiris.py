@@ -638,6 +638,9 @@ class PenumbraOsiris(ScriptStrategyBase):
         logging.getLogger().info("Formatting balances...")
         for response in responses:
             print(response)
+            
+            if response.account_address.index != account_number:
+                continue
 
             try: 
                 balance = {
