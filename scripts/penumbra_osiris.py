@@ -622,6 +622,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         # Create new grpc.Channel + client
         client = ViewService()
         request = view_pb2.BalancesRequest()
+        request.account_filter = keys_pb2.AddressIndex()
         request.account_filter.account = account_number
         query_client = QueryService()
         logging.getLogger().info(f"BalanceRequest: {request}")
