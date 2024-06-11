@@ -271,7 +271,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 
     def build_and_broadcast_tx(self, client, broadcast_request):
         # Service will await detection on chain
-        broadcast_request.await_detection = True
+        broadcast_request.await_detection = False
 
         logging.getLogger().info("Creating tx, waiting for broadcast to return...")
         broadcast_response_iterator = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
