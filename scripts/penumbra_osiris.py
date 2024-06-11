@@ -223,7 +223,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         return [lo, hi]
 
     def hi_low_to_human_readable(self, hi, lo, decimals):
-        return ((hi << 64) | lo) / (10**decimals)
+        return ((hi << 64) + lo) / (10**decimals)
 
     def generate_nonce(self):
         """Generate a 32-byte nonce."""
@@ -642,7 +642,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             try: 
                 balance = {
                     "amount":
-                    response.balance_view.known_asset_id.amount.lo,
+                    response.balance_view.known_asset_id.amount,
                     "asset_id":
                         bytes.fromhex(
                             response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())
