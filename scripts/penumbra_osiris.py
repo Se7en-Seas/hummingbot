@@ -688,6 +688,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             symbol = TOKEN_ADDRESS_MAP[token_address]['symbol']
 
             # amount's are uint 128 bit https://buf.build/penumbra-zone/penumbra/docs/300a488c79c9490d86cf09e1eceff593:penumbra.core.num.v1alpha1#penumbra.core.num.v1alpha1.Amount
+            logging.getLogger().info(f"Raw Balance for {symbol}: hi{balance['amount'].hi} lo{balance['amount'].lo}")
             balance = Decimal(str(self.hi_low_to_human_readable(response.balance_view.known_asset_id.amount.hi, response.balance_view.known_asset_id.amount.lo, decimals)))
             #logging.getLogger().info(f"Balance for {symbol}: {balance}")
 
