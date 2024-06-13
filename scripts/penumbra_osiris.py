@@ -243,6 +243,7 @@ class PenumbraOsiris(ScriptStrategyBase):
     def witness_and_build_tx(self, client, wit_and_build_req):
         wit_and_build_resp_iterator = client.WitnessAndBuild(request=wit_and_build_req,target=self._pclientd_url,insecure=True)
         wit_and_build_resp = None
+        logging.getLogger().info("Witnessing and building tx, waiting for response...")
         
         while True:
             try:
@@ -251,23 +252,31 @@ class PenumbraOsiris(ScriptStrategyBase):
 
                 # Check which field is set in the oneof status
                 status_field = wit_and_build_resp.WhichOneof("status")
+                logging.getLogger().info(f"Witness Status field: {status_field}")
 
                 if status_field == "complete":
+                    logging.getLogger().info("Witness complete!")
                     return wit_and_build_resp.complete.transaction
                 elif status_field == "build_progress":
+                    logging.getLogger().info(f"Progress on build..{wit_and_build_resp.build_progress}")
                     print(wit_and_build_resp.build_progress)
                     print("Current progress: ", wit_and_build_resp.build_progress.progress)
                 else:
                     print("Unexpected response: ", wit_and_build_resp)
+                    logging.getLogger().info("Unexpected response: ", wit_and_build_resp)
                     return None
 
             except StopIteration:
                 # Handle end of iterator (shouldn't happen if server is streaming)
                 print("Fatal error thrown, server disconnected prematurely during witness and build step.")
+                logging.getLogger().info("Fatal error thrown, server disconnected prematurely during witness and build step.")
                 break
             except Exception as e:
                 print(f"Error processing response: {e}")
-                time.sleep(1)
+                logging.getLogger().info(f"Error processing response!")
+                logging.getLogger().info(f"Error processing (next) response: {e}")
+                return None
+                #time.sleep(1)
                 
     def build_and_broadcast_tx(self, client, broadcast_request):
         # Service will await detection on chain
