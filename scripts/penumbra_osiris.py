@@ -484,82 +484,42 @@ class PenumbraOsiris(ScriptStrategyBase):
         active_orders, closed_orders = self.get_orders()
         print(f"Time to get orders: {(time.time()) - start_time}")
         logging.getLogger().info(f"Number of orders to withdraw: (active) {len(active_orders)} and (closed) {len(closed_orders)}")
+        if len(active_orders) == 0 and len(closed_orders) == 0:
+            logging.getLogger().info("No orders to cancel.")
+            return
 
         client = ViewService()
         # Iterate over dictionary keys
         order_key_list = list(active_orders.keys())
+        
+        start_time = (time.time())
+    
+        # Create base request
+        transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+        # Set fee mode to automatic high tier
+        # TODO: Consider configurability
+        transactionPlanRequest.auto_fee.fee_tier = 3
+        transactionPlanRequest.source.account = account_number
+        logging.getLogger().info("Planning transactions...")
+        logging.getLogger().info(f"Closing orders...")
 
         for order_key in order_key_list:
-            logging.getLogger().info(f"Closing order: {order_key}")
-            try:
-                start_time = (time.time())
-                transactionPlanRequest = view_pb2.TransactionPlannerRequest()
-
-                logging.getLogger().info("Planning transaction...")
-                # Set fee mode to automatic medium tier
-                # TODO: Consider configurability
-                transactionPlanRequest.auto_fee.fee_tier = 3
-                transactionPlanRequest.source.account = account_number
-
-                # Set the Position directly
+            try:                
+                # Add a the Position close directly
                 position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
                 position_close_bech32m.alt_bech32m = active_orders[order_key]['asset'].denom_metadata.display.split(LP_NFT_OPEN_PREFIX)[1]
 
-                transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
-
-                print(f"Time to get Cancel transaction plan: {(time.time()) - start_time}")
-                start_time = (time.time())
-
-                logging.getLogger().info("Authorizing transaction...")
-                # Authorize the tx
-                authorized_resp = self.authorize_tx(transactionPlanResponse)
-                print(f"Time to get Cancel authorization: {(time.time()) - start_time}")
-                start_time = (time.time())
-
-
-                logging.getLogger().info("Witnessing and building transaction...")
-                # Witness & Build
-                wit_and_build_req = view_pb2.WitnessAndBuildRequest()
-                wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
-                wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
-                tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
-
-                print(f"Time to get Cancel witness and build: {(time.time()) - start_time}")
-                start_time = (time.time())
-
-                # Broadcast
-                logging.getLogger().info("Broadcasting transaction...")
-                broadcast_request = view_pb2.BroadcastTransactionRequest()
-                broadcast_request.transaction.CopyFrom(tx_to_broadcast)
-
-                logging.getLogger().info("Deleting order..")
-                broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
-                logging.getLogger().info(
-                    f"Order cancelled at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}"
-                )
-                print(f"Time to get Cancel broadcast: {(time.time()) - start_time}")
-
-                #breakpoint()
-
             except Exception as e:
-                logging.getLogger().error(f"Error cancelling liquidity position: {str(e)}")
+                logging.getLogger().error(f"Error adding positions to close: {str(e)}")
 
-
-        # Withdraw from positions, iterate over closed orders if there were any, and also attempt to withdraw from any active positions since we just closed them
+        # Add withdraw from positions, iterate over closed orders if there were any, and also attempt to withdraw from any active positions since we just closed them
         # Concat the 2 dictionaries
         all_orders = {**active_orders, **closed_orders}
         all_order_keys = list(all_orders.keys())
-
+        currentIndex = 0
+        
         for order_key in all_order_keys:
             try:
-                start_time = (time.time())
-                transactionPlanRequest = view_pb2.TransactionPlannerRequest()
-
-                # Set fee mode to automatic medium tier
-                # TODO: Consider configurability
-                transactionPlanRequest.auto_fee.fee_tier = 3
-                transactionPlanRequest.source.account = account_number
-
                 # Get where current position is (active/closed) to figure out what prefix to use
                 if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
                     prefix = LP_NFT_OPEN_PREFIX
@@ -578,49 +538,52 @@ class PenumbraOsiris(ScriptStrategyBase):
                 position_withdraw_bech32m.alt_bech32m = all_orders[order_key]['asset'].denom_metadata.display.split(prefix)[1] 
 
                 # Set the remaining Reserves
-                transactionPlanRequest.position_withdraws[0].reserves.r1.lo = all_orders[order_key]['position'].reserves.r1.lo
-                transactionPlanRequest.position_withdraws[0].reserves.r1.hi = all_orders[order_key]['position'].reserves.r1.hi
-                transactionPlanRequest.position_withdraws[0].reserves.r2.lo = all_orders[order_key]['position'].reserves.r2.lo
-                transactionPlanRequest.position_withdraws[0].reserves.r2.hi = all_orders[order_key]['position'].reserves.r2.hi
+                transactionPlanRequest.position_withdraws[currentIndex].reserves.r1.lo = all_orders[order_key]['position'].reserves.r1.lo
+                transactionPlanRequest.position_withdraws[currentIndex].reserves.r1.hi = all_orders[order_key]['position'].reserves.r1.hi
+                transactionPlanRequest.position_withdraws[currentIndex].reserves.r2.lo = all_orders[order_key]['position'].reserves.r2.lo
+                transactionPlanRequest.position_withdraws[currentIndex].reserves.r2.hi = all_orders[order_key]['position'].reserves.r2.hi
 
                 # Set the trading pair
-                transactionPlanRequest.position_withdraws[0].trading_pair.asset_1.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_1.inner.hex())
-                transactionPlanRequest.position_withdraws[0].trading_pair.asset_2.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_2.inner.hex())
-
-                transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
-
-                print(f"Time to get Withdraw transaction plan: {(time.time()) - start_time}")
-                start_time = (time.time())
-
-                # Authorize the tx
-                authorized_resp = self.authorize_tx(transactionPlanResponse)
-
-                print(f"Time to get Withdraw authorization: {(time.time()) - start_time}")
-                start_time = (time.time())
-
-                # Witness & Build
-                wit_and_build_req = view_pb2.WitnessAndBuildRequest()
-                wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
-                wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
-                tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
-                
-                print(f"Time to get Withdraw witness and build: {(time.time()) - start_time}")
-                start_time = (time.time())
-
-                # Broadcast
-                broadcast_request = view_pb2.BroadcastTransactionRequest()
-                broadcast_request.transaction.CopyFrom(tx_to_broadcast)
-                
-                logging.getLogger().info("Withdrawing from position..")
-                broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
-                logging.getLogger().info(
-                    f"Withdrawn from position at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}"
-                )
-                print(f"Time to get Withdraw broadcast: {(time.time()) - start_time}")
-
+                transactionPlanRequest.position_withdraws[currentIndex].trading_pair.asset_1.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_1.inner.hex())
+                transactionPlanRequest.position_withdraws[currentIndex].trading_pair.asset_2.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_2.inner.hex())
+                currentIndex += 1
             except Exception as e:
-                logging.getLogger().error(f"Error withdrawing from liquidity position: {str(e)}")
+                logging.getLogger().error(f"Error adding withdraw from liquidity positions: {str(e)}")
+                
+        try: 
+            print(f"Time to get Close & Withdraw transaction plan: {(time.time()) - start_time}")
+            start_time = (time.time())
+            logging.getLogger().info("request:", transactionPlanRequest)
 
+            transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
+
+            # Authorize the tx
+            authorized_resp = self.authorize_tx(transactionPlanResponse)
+
+            print(f"Time to get Withdraw authorization: {(time.time()) - start_time}")
+            start_time = (time.time())
+
+            # Witness & Build
+            wit_and_build_req = view_pb2.WitnessAndBuildRequest()
+            wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
+            wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
+            tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
+            
+            print(f"Time to get Withdraw witness and build: {(time.time()) - start_time}")
+            start_time = (time.time())
+
+            # Broadcast
+            broadcast_request = view_pb2.BroadcastTransactionRequest()
+            broadcast_request.transaction.CopyFrom(tx_to_broadcast)
+            
+            logging.getLogger().info("Withdrawing from position..")
+            broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
+            logging.getLogger().info(
+                f"Withdrawn from position at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}"
+            )
+            print(f"Time to get Withdraw broadcast: {(time.time()) - start_time}")
+        except Exception as e:
+            logging.getLogger().error(f"Error closing & withdrawing from liquidity positions: {str(e)}")
 
     def did_fill_order(self, event: OrderFilledEvent):
         msg = (f"{event.trade_type.name} {round(event.amount, 2)} {event.trading_pair} {self.exchange} at {round(event.price, 2)}")
