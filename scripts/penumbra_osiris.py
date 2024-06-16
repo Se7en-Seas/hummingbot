@@ -505,10 +505,10 @@ class PenumbraOsiris(ScriptStrategyBase):
 
         for order_key in order_key_list:
             try:                
+                logging.getLogger().info(f"Adding order close: {order_key}")
                 # Add a the Position close directly
                 position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
                 position_close_bech32m.alt_bech32m = active_orders[order_key]['asset'].denom_metadata.display.split(LP_NFT_OPEN_PREFIX)[1]
-
             except Exception as e:
                 logging.getLogger().error(f"Error adding positions to close: {str(e)}")
 
@@ -518,6 +518,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         all_order_keys = list(all_orders.keys())
         currentIndex = 0
         
+        logging.getLogger().info(f"Beginning to indicate withdraw from {len(all_order_keys)} positions...")
         for order_key in all_order_keys:
             try:
                 # Get where current position is (active/closed) to figure out what prefix to use
@@ -535,6 +536,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
                 # Set the Position directly
                 position_withdraw_bech32m = transactionPlanRequest.position_withdraws.add().position_id
+                # Always use the closed prefix for withdraws as they would be closed in the previous step
                 position_withdraw_bech32m.alt_bech32m = all_orders[order_key]['asset'].denom_metadata.display.split(prefix)[1] 
 
                 # Set the remaining Reserves
@@ -547,13 +549,15 @@ class PenumbraOsiris(ScriptStrategyBase):
                 transactionPlanRequest.position_withdraws[currentIndex].trading_pair.asset_1.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_1.inner.hex())
                 transactionPlanRequest.position_withdraws[currentIndex].trading_pair.asset_2.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_2.inner.hex())
                 currentIndex += 1
+                logging.getLogger().info(f"Added withdraw from position: {order_key}")
             except Exception as e:
                 logging.getLogger().error(f"Error adding withdraw from liquidity positions: {str(e)}")
                 
         try: 
             print(f"Time to get Close & Withdraw transaction plan: {(time.time()) - start_time}")
             start_time = (time.time())
-            logging.getLogger().info("request:", transactionPlanRequest)
+            logging.getLogger().info("Request: ")
+            logging.getLogger().info(f"{transactionPlanRequest}")
 
             transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
 
@@ -596,8 +600,8 @@ class PenumbraOsiris(ScriptStrategyBase):
         request = view_pb2.BalancesRequest()
         request.account_filter.account = account_number
         query_client = QueryService()
-        logging.getLogger().info(f"BalanceRequest: {request}")
-        logging.getLogger().info(f"Account number: {account_number}")
+        #logging.getLogger().info(f"BalanceRequest: {request}")
+        #logging.getLogger().info(f"Account number: {account_number}")
 
         start_time = (time.time())
         logging.getLogger().info("Getting all balances...")
