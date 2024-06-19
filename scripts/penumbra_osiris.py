@@ -109,40 +109,111 @@ class PenumbraOsiris(ScriptStrategyBase):
 
         :param timestamp: current tick timestamp
         """
-        self.on_tick()
+        self.on_tick(self.account_number)
     
     # ! Implement graceful on stop behavior (cancel all orders, withdraw from all positions)    
     def on_stop(self):
         print("Stopping strategy...")
-        self.cancel_all_orders(self.account_number)
+        # Create new base request
+        transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+        # High fee tier
+        transactionPlanRequest.auto_fee.fee_tier = 3
+        transactionPlanRequest.source.account = self.account_number
+        
+        # Cancel all orders
+        transactionPlanRequest = self.create_cancel_order_plans(transactionPlanRequest)
+        if transactionPlanRequest != None:
+            self.broadcast_transaction_plan(transactionPlanRequest)
+        
+        # Withdraw from all positions
+        transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+        # High fee tier
+        transactionPlanRequest.auto_fee.fee_tier = 3
+        transactionPlanRequest.source.account = self.account_number
+        transactionPlanRequest = self.create_withdraw_order_plans(transactionPlanRequest)
+        if transactionPlanRequest != None:
+            self.broadcast_transaction_plan(transactionPlanRequest)
+        
         print("Strategy stopped.")
 
-    def on_tick(self):
+    def on_tick(self, account_number: int = 0):
         # Only run on tick if order_refresh_time is passed to not consume too many resources
         try: 
             if self.create_timestamp <= self.current_timestamp - self.order_refresh_time:
                 total_loop_time = time.time()
+                price_feed_time = time.time()
+                
                 logging.getLogger().info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Refreshing order book ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-                logging.getLogger().info("1. Cancelling any outstanding orders...")
                 start_time = (time.time())
-                self.cancel_all_orders(self.account_number)
-                print(f"TOTAL Time to cancel all orders: {(time.time()) - start_time}")
-                start_time = (time.time())
-
-                logging.getLogger().info("2. Checking price feeds...")
+                logging.getLogger().info("1. Checking price feeds...")
                 bid_ask: List[float] = self.create_proposal()
                 print(f"TOTAL Time to get price feeds: {(time.time()) - start_time}")
-                logging.getLogger().info(f"3. Best bid: {bid_ask[0]} and ask: {bid_ask[1]}")
+                logging.getLogger().info(f"<><><> Best bid: {bid_ask[0]} and ask: {bid_ask[1]} <><><>")
+                price_feed_end_time = (time.time())
+
+                cancel_open_time = time.time()
+                # Create new base request
+                transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+                # High fee tier
+                transactionPlanRequest.auto_fee.fee_tier = 3
+                transactionPlanRequest.source.account = account_number
+
+                logging.getLogger().info("2. Creating cancel order plan...")
+                start_time = (time.time())
+                transactionPlanRequest = self.create_cancel_order_plans(transactionPlanRequest)
+                print(f"TOTAL Time to plan cancelling of all orders: {(time.time()) - start_time}")
+                if transactionPlanRequest == None:
+                    # Reset the request for the open step
+                    transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+                    # High fee tier
+                    transactionPlanRequest.auto_fee.fee_tier = 3
+                    transactionPlanRequest.source.account = account_number
+                
                 start_time = (time.time())
 
-                logging.getLogger().info("4. Creating liquidity position...")
-                self.make_liquidity_position(bid_ask, self.account_number)
-                print(f"TOTAL Time to create liquidity position: {(time.time()) - start_time}")
+                logging.getLogger().info("3. Creating liquidity position transaction plan...")
+                transactionPlanRequest = self.create_lp_order_plans(transactionPlanRequest, bid_ask, self.account_number)
+                print(f"TOTAL Time to create liquidity position plan: {(time.time()) - start_time}")
+
+                start_time = (time.time())
+                logging.getLogger().info("Building and broadcasting open/close plans...")
+                self.broadcast_transaction_plan(transactionPlanRequest)
+                print(f"TOTAL Time to broadcast transaction plan: {(time.time()) - start_time}")
+                cancel_open_end_time = (time.time())
+                
+                logging.getLogger().info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
+                start_time = (time.time())
+                withdraw_time = time.time()
+                logging.getLogger().info("4. Creating withdraw order plan...")
+                # Create new base request
+                transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+                # High fee tier
+                transactionPlanRequest.auto_fee.fee_tier = 3
+                transactionPlanRequest.source.account = account_number
+                transactionPlanRequest = self.create_withdraw_order_plans(transactionPlanRequest)
+                logging.getLogger().info(f"TOTAL Time to plan withdrawing from all positions: {(time.time()) - start_time}")
+                start_time = (time.time())
+                logging.getLogger().info("Building and broadcasting withdraw plans...")
+                if transactionPlanRequest != None:
+                    self.broadcast_transaction_plan(transactionPlanRequest)
+                logging.getLogger().info(f"TOTAL Time to broadcast withdraw transaction plan: {(time.time()) - start_time}")
+                withdraw_end_time = (time.time())
 
                 self.create_timestamp = self.order_refresh_time + self.current_timestamp
+                # Print some summary metrics
                 print(
                     f"~~~~~~~~~ TOTAL Time to refresh order book: {(time.time()) - total_loop_time} ~~~~~~~~~"
+                )
+                print(
+                    f"~~~~~~~~~ TOTAL Time to get price feeds from binance: {(price_feed_end_time - price_feed_time)} ~~~~~~~~~"
+                )
+                print(
+                    f"~~~~~~~~~ TOTAL Time to cancel & open orders: {(cancel_open_end_time - cancel_open_time)} ~~~~~~~~~"
+                )
+                print(
+                    f"~~~~~~~~~ TOTAL Time to withdraw from positions: {(withdraw_end_time - withdraw_time)} ~~~~~~~~~"
                 )
         except Exception as e:
             logging.getLogger().error(f"Error on tick: {str(e)}")
@@ -315,14 +386,37 @@ class PenumbraOsiris(ScriptStrategyBase):
                 logging.getLogger().info(f"Error processing (next) response: {e}")
                 return None
 
+    def create_cancel_order_plans(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
+        start_time = (time.time())
+        logging.getLogger().info("Creating cancel order plan...")
+        active_orders, _ = self.get_orders()
+        logging.getLogger().info(f"Number of orders to close: (active) {len(active_orders)}")
+        
+        if len(active_orders) == 0:
+            logging.getLogger().info("No orders to cancel.")
+            return None
+        
+        # Iterate over dictionary keys
+        order_key_list = list(active_orders.keys())
+        
+        for order_key in order_key_list:
+            try:                
+                logging.getLogger().info(f"Adding order close: {order_key}")
+                # Add a the Position close directly
+                position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
+                position_close_bech32m.alt_bech32m = active_orders[order_key]['asset'].denom_metadata.display.split(LP_NFT_OPEN_PREFIX)[1]
+            except Exception as e:
+                logging.getLogger().error(f"Error adding positions to close: {str(e)}")
+
+        logging.getLogger().info(f"Time to create cancel order plan: {(time.time()) - start_time}")
+        
+        return transactionPlanRequest
+
     # https://guide.penumbra.zone/main/pclientd/build_transaction.html
-    def make_liquidity_position(self, bid_ask: List[int], account_number: int = 0):
+    def create_lp_order_plans(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest, bid_ask: List[int], account_number: int = 0):
         try:
             start_time = (time.time())
-            logging.getLogger().info("Beginning liquidity position creation...")
-            
-            # keep track of whether assets were swapped due to lexographic order in asset ordering
-            swapped_assets = False
+            logging.getLogger().info("Beginning liquidity position plan creation...")
             
             # Get asset ids from constants file
             asset_1 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[0]]
@@ -342,21 +436,10 @@ class PenumbraOsiris(ScriptStrategyBase):
                 tmp = asset_1
                 asset_1 = asset_2
                 asset_2 = tmp
-                swapped_assets = True
                 
             logging.getLogger().info(f"Assets configured...")
-                
-            #print("!!!!!!!  Swapped assets? : ", swapped_assets)
-
-            client = ViewService()
-            transactionPlanRequest = view_pb2.TransactionPlannerRequest()
             logging.getLogger().info("Planning transaction...")
             
-            # Set fee mode to automatic medium tier
-            # TODO: Consider configurability
-            transactionPlanRequest.auto_fee.fee_tier = 3
-            transactionPlanRequest.source.account = account_number
-
             # Assuming you have values for fee, p, q, your_trading_pair, your_reserve1, your_reserve2, and your_nonce
             # Set the TradingFunction directly
             trading_function = transactionPlanRequest.position_opens.add().position.phi
@@ -402,6 +485,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             #print(f"Asset 2: {asset_2['address']}")
 
             # Set the PositionState directly
+            # ! We're only ever opening one position at a time so we can assume the first position in the list
             position_state = transactionPlanRequest.position_opens[0].position.state
             position_state.state = 1
 
@@ -418,7 +502,7 @@ class PenumbraOsiris(ScriptStrategyBase):
             res1 = balances[asset_1["symbol"]]['amount'] * 10**balances[asset_1["symbol"]]['decimals']
             res2 = balances[asset_2["symbol"]]['amount'] * 10**balances[asset_2["symbol"]]['decimals']
 
-            #reserve1_int, reserve2_int = self.calculate_half_reserves(res1, res2)
+            # reserve1_int, reserve2_int = self.calculate_half_reserves(res1, res2)
             reserve1, reserve2 = self.calculate_pct_reserves(res1, res2, self.reserves1_pct, self.reserves2_pct)
 
             reserve1 = self.int_to_lo_hi(int(reserve1))
@@ -439,100 +523,43 @@ class PenumbraOsiris(ScriptStrategyBase):
             transactionPlanRequest.position_opens[0].position.close_on_fill = False
             transactionPlanRequest.position_opens[0].position.nonce = self.generate_nonce()
 
-            transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
-
             print(f"Time to get LP transaction plan: {(time.time()) - start_time}")
             logging.getLogger().info(f"Time to get LP transaction plan: {(time.time()) - start_time}")
-            start_time = (time.time())
-
-            logging.getLogger().info("Authorizing transaction...")
-            # Authorize the tx
-            authorized_resp = self.authorize_tx(transactionPlanResponse)
             
-            logging.getLogger().info(f"Witnessing and building transaction...")
-
-            # Witness & Build
-            wit_and_build_req = view_pb2.WitnessAndBuildRequest()
-            wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
-            wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
-            tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
-            
-            print(f"Time to get LP auth, witness and build: {(time.time()) - start_time}")
-            start_time = (time.time())
-
-            # Broadcast
-            logging.getLogger().info("Broadcasting transaction...")
-            broadcast_request = view_pb2.BroadcastTransactionRequest()
-            broadcast_request.transaction.CopyFrom(tx_to_broadcast)
-            broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
-            
-            if broadcast_response is None:
-                logging.getLogger().error("Error broadcasting transaction, check logs, attempting again next tick...")
-                return
-            
-            logging.getLogger().info(f"Order detected at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
-            print(f"Time to get LP broadcast: {(time.time()) - start_time}")
-            #breakpoint()
-
+            return transactionPlanRequest
         except Exception as e:
             logging.getLogger().error(f"Error making liquidity position: {str(e)}")
-
-    # Cancel & withdraw from all orders
-    def cancel_all_orders(self, account_number: int = 0):
-        start_time = (time.time())
-        logging.getLogger().info("Cancelling old orders...")
-        active_orders, closed_orders = self.get_orders()
-        print(f"Time to get orders: {(time.time()) - start_time}")
-        logging.getLogger().info(f"Number of orders to withdraw: (active) {len(active_orders)} and (closed) {len(closed_orders)}")
-        if len(active_orders) == 0 and len(closed_orders) == 0:
-            logging.getLogger().info("No orders to cancel.")
-            return
-
-        client = ViewService()
-        # Iterate over dictionary keys
-        order_key_list = list(active_orders.keys())
-        
-        start_time = (time.time())
     
-        # Create base request
-        transactionPlanRequest = view_pb2.TransactionPlannerRequest()
-        # Set fee mode to automatic high tier
-        # TODO: Consider configurability
-        transactionPlanRequest.auto_fee.fee_tier = 3
-        transactionPlanRequest.source.account = account_number
-        logging.getLogger().info("Planning transactions...")
-        logging.getLogger().info(f"Closing orders...")
-
-        for order_key in order_key_list:
-            try:                
-                logging.getLogger().info(f"Adding order close: {order_key}")
-                # Add a the Position close directly
-                position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
-                position_close_bech32m.alt_bech32m = active_orders[order_key]['asset'].denom_metadata.display.split(LP_NFT_OPEN_PREFIX)[1]
-            except Exception as e:
-                logging.getLogger().error(f"Error adding positions to close: {str(e)}")
-
-        # Add withdraw from positions, iterate over closed orders if there were any, and also attempt to withdraw from any active positions since we just closed them
-        # Concat the 2 dictionaries
-        all_orders = {**active_orders, **closed_orders}
+    def create_withdraw_order_plans(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
+        start_time = (time.time())
+        logging.getLogger().info("Creating withdraw order plan...")
+        _, closed_orders = self.get_orders()
+        logging.getLogger().info(f"Number of orders to withdraw (already closed) {len(closed_orders)}")
+        
+        if len(closed_orders) == 0:
+            logging.getLogger().info("No orders to withdraw.")
+            return None
+        
+        # Add withdraw from positions, iterate over closed orders if there were any
+        all_orders = {**closed_orders}
         all_order_keys = list(all_orders.keys())
         currentIndex = 0
         
-        logging.getLogger().info(f"Beginning to indicate withdraw from {len(all_order_keys)} positions...")
+        logging.getLogger().info(f"Beginning to gather withdraw plans from {len(all_order_keys)} positions...")
         for order_key in all_order_keys:
             try:
                 # Get where current position is (active/closed) to figure out what prefix to use
-                if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
-                    prefix = LP_NFT_OPEN_PREFIX
-                elif LP_NFT_CLOSED_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
+                #if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
+                #    prefix = LP_NFT_OPEN_PREFIX
+                if LP_NFT_CLOSED_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
                     prefix = LP_NFT_CLOSED_PREFIX
                 #if order_key in active_orders:
                 #    prefix = LP_NFT_OPEN_PREFIX
                 #elif order_key in closed_orders:
                 #    prefix = LP_NFT_CLOSED_PREFIX
                 else:
-                    logging.Logger().error(f"Could not find prefix for order id: {order_key}")
-                    raise ValueError(f"Could not find prefix for order id: {order_key}")
+                    logging.Logger().error(f"Could not find prefix for order id: {order_key}, invalid")
+                    raise ValueError(f"Could not find prefix for order id: {order_key}, invalid")
 
                 # Set the Position directly
                 position_withdraw_bech32m = transactionPlanRequest.position_withdraws.add().position_id
@@ -550,22 +577,25 @@ class PenumbraOsiris(ScriptStrategyBase):
                 transactionPlanRequest.position_withdraws[currentIndex].trading_pair.asset_2.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_2.inner.hex())
                 currentIndex += 1
                 logging.getLogger().info(f"Added withdraw from position: {order_key}")
+                
+                
             except Exception as e:
                 logging.getLogger().error(f"Error adding withdraw from liquidity positions: {str(e)}")
                 
-        try: 
-            print(f"Time to get Close & Withdraw transaction plan: {(time.time()) - start_time}")
-            start_time = (time.time())
-            logging.getLogger().info("Request: ")
-            logging.getLogger().info(f"{transactionPlanRequest}")
-
+        return transactionPlanRequest
+        
+    def broadcast_transaction_plan(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
+        try:
+            client = ViewService()
             transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
+            
+            start_time = (time.time())
 
+            logging.getLogger().info("Authorizing transaction...")
             # Authorize the tx
             authorized_resp = self.authorize_tx(transactionPlanResponse)
-
-            print(f"Time to get Withdraw authorization: {(time.time()) - start_time}")
-            start_time = (time.time())
+            
+            logging.getLogger().info(f"Witnessing and building transaction...")
 
             # Witness & Build
             wit_and_build_req = view_pb2.WitnessAndBuildRequest()
@@ -573,21 +603,25 @@ class PenumbraOsiris(ScriptStrategyBase):
             wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
             tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
             
-            print(f"Time to get Withdraw witness and build: {(time.time()) - start_time}")
+            print(f"Time to get auth, witness and build: {(time.time()) - start_time}")
             start_time = (time.time())
 
             # Broadcast
+            logging.getLogger().info("Broadcasting transaction...")
             broadcast_request = view_pb2.BroadcastTransactionRequest()
             broadcast_request.transaction.CopyFrom(tx_to_broadcast)
-            
-            logging.getLogger().info("Withdrawing from position..")
             broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
-            logging.getLogger().info(
-                f"Withdrawn from position at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}"
-            )
-            print(f"Time to get Withdraw broadcast: {(time.time()) - start_time}")
+            
+            if broadcast_response is None:
+                logging.getLogger().error("Error broadcasting transaction, check logs, attempting again next tick...")
+                return
+            
+            logging.getLogger().info(f"Order detected at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
+            print(f"Time to get broadcast: {(time.time()) - start_time}")
+            #breakpoint()
+
         except Exception as e:
-            logging.getLogger().error(f"Error closing & withdrawing from liquidity positions: {str(e)}")
+            logging.getLogger().error(f"Error broadcasting tx plan: {str(e)}")        
 
     def did_fill_order(self, event: OrderFilledEvent):
         msg = (f"{event.trade_type.name} {round(event.amount, 2)} {event.trading_pair} {self.exchange} at {round(event.price, 2)}")
