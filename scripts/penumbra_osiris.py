@@ -128,6 +128,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         print("Strategy stopped.")
     
     def cancel_and_withdraw_all(self, account_number):
+        time.sleep(6) # Sleep for a block(ish) to prevent nullifier reuse issues
         # Create new base request
         transactionPlanRequest = view_pb2.TransactionPlannerRequest()
         # High fee tier
