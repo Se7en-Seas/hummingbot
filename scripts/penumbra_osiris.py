@@ -156,19 +156,19 @@ class PenumbraOsiris(ScriptStrategyBase):
                     block = "N+1"
                     
                 open_account = account_number_0
-                withdraw_account = account_number_1
+                close_account = account_number_1
                 
                 if self.current_block == 1:
                     open_account = account_number_1
-                    withdraw_account = account_number_0
+                    close_account = account_number_0
                 
                 logging.getLogger().info(f"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Refreshing order book at block {block} ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 
-                logging.getLogger().info(f"Block {block}: <><><> Processing opens/closes for account {open_account} <><><>")
-                self.open_close_orders(open_account)
+                logging.getLogger().info(f"Block {block}: <><><> Processing opens/withdraws for account {open_account} <><><>")
+                self.open_withdraw_orders(open_account)
                 
-                logging.getLogger().info(f"Block {block}: <><><> Processing withdraws for account {withdraw_account} <><><>")
-                self.withdraw_orders(withdraw_account)
+                logging.getLogger().info(f"Block {block}: <><><> Processing closes for account {close_account} <><><>")
+                self.close_orders(close_account)
                 
                 logging.getLogger().info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
                 
@@ -186,7 +186,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         except Exception as e:
             logging.getLogger().error(f"Error on tick: {str(e)}")
 
-    def open_close_orders(self, account_number):
+    def open_withdraw_orders(self, account_number):
         start_time = (time.time())
         price_feed_time = time.time()
 
@@ -196,17 +196,17 @@ class PenumbraOsiris(ScriptStrategyBase):
         logging.getLogger().info(f"<><><> Best bid: {bid_ask[0]} and ask: {bid_ask[1]} <><><>")
         price_feed_end_time = (time.time())
 
-        cancel_open_time = time.time()
+        withdraw_open_time = time.time()
         # Create new base request
         transactionPlanRequest = view_pb2.TransactionPlannerRequest()
         # High fee tier
         transactionPlanRequest.auto_fee.fee_tier = 3
         transactionPlanRequest.source.account = account_number
 
-        logging.getLogger().info("2. Creating cancel order plan...")
+        logging.getLogger().info("2. Creating withdraw order plan...")
         start_time = (time.time())
-        transactionPlanRequest = self.create_cancel_order_plans(account_number, transactionPlanRequest)
-        print(f"TOTAL Time to plan cancelling of all orders: {(time.time()) - start_time}")
+        transactionPlanRequest = self.create_withdraw_order_plans(account_number, transactionPlanRequest)
+        print(f"TOTAL Time to plan withdrawl from orders: {(time.time()) - start_time}")
         if transactionPlanRequest == None:
             # Reset the request for the open step
             transactionPlanRequest = view_pb2.TransactionPlannerRequest()
@@ -224,41 +224,41 @@ class PenumbraOsiris(ScriptStrategyBase):
         logging.getLogger().info("Building and broadcasting open/close plans...")
         self.broadcast_transaction_plan(transactionPlanRequest)
         print(f"TOTAL Time to broadcast transaction plan: {(time.time()) - start_time}")
-        cancel_open_end_time = (time.time())
+        withdraw_open_end_time = (time.time())
         
         print(
-            f"~~~~~~~~~ TOTAL Time to cancel & open orders: {(cancel_open_end_time - cancel_open_time)} ~~~~~~~~~"
+            f"~~~~~~~~~ TOTAL Time to withdraw & open orders: {(withdraw_open_end_time - withdraw_open_time)} ~~~~~~~~~"
         )
         print(
             f"~~~~~~~~~ TOTAL Time to get price feeds from binance: {(price_feed_end_time - price_feed_time)} ~~~~~~~~~"
         )
-        logging.getLogger().info(f"TOTAL Time to cancel & open orders: {(cancel_open_end_time - cancel_open_time)}")
+        logging.getLogger().info(f"TOTAL Time to withdraw & open orders: {(withdraw_open_end_time - withdraw_open_time)}")
         logging.getLogger().info(f"TOTAL Time to get price feeds from binance: {(price_feed_end_time - price_feed_time)}")
 
-    def withdraw_orders(self, account_number):
+    def close_orders(self, account_number):
         start_time = (time.time())
-        withdraw_time = time.time()
-        logging.getLogger().info("4. Creating withdraw order plan...")
+        close_time = time.time()
+        logging.getLogger().info("4. Creating close order plan...")
         # Create new base request
         transactionPlanRequest = view_pb2.TransactionPlannerRequest()
         # High fee tier
         transactionPlanRequest.auto_fee.fee_tier = 3
         transactionPlanRequest.source.account = account_number
-        transactionPlanRequest = self.create_withdraw_order_plans(account_number, transactionPlanRequest)
-        logging.getLogger().info(f"TOTAL Time to plan withdrawing from all positions: {(time.time()) - start_time}")
+        transactionPlanRequest = self.create_cancel_order_plans(account_number, transactionPlanRequest)
+        logging.getLogger().info(f"TOTAL Time to plan close from all positions: {(time.time()) - start_time}")
         start_time = (time.time())
-        logging.getLogger().info("Building and broadcasting withdraw plans...")
+        logging.getLogger().info("Building and broadcasting close plans...")
         if transactionPlanRequest != None:
             self.broadcast_transaction_plan(transactionPlanRequest)
         
-            logging.getLogger().info(f"TOTAL Time to broadcast withdraw transaction plan: {(time.time()) - start_time}")
-            withdraw_end_time = (time.time())
+            logging.getLogger().info(f"TOTAL Time to broadcast close transaction plan: {(time.time()) - start_time}")
+            close_end_time = (time.time())
             print(
-                f"~~~~~~~~~ TOTAL Time to withdraw from positions: {(withdraw_end_time - withdraw_time)} ~~~~~~~~~"
+                f"~~~~~~~~~ TOTAL Time to close positions: {(close_end_time - close_time)} ~~~~~~~~~"
             )
-            logging.getLogger().info(f"TOTAL Time to withdraw from positions: {(withdraw_end_time - withdraw_time)}")
+            logging.getLogger().info(f"TOTAL Time to close positions: {(close_end_time - close_time)}")
         else:
-            logging.getLogger().info("No positions to withdraw from.")
+            logging.getLogger().info("No positions to close.")
 
     def create_proposal(self) -> List[float]:
         try:
