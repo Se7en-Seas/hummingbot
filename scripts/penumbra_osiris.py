@@ -132,7 +132,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         transactionPlanRequest.source.account = account_number
         
         # Cancel all orders
-        transactionPlanRequest = self.create_cancel_order_plans(transactionPlanRequest)
+        transactionPlanRequest = self.create_cancel_order_plans(account_number, transactionPlanRequest)
         if transactionPlanRequest != None:
             self.broadcast_transaction_plan(transactionPlanRequest)
         
@@ -141,7 +141,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         # High fee tier
         transactionPlanRequest.auto_fee.fee_tier = 3
         transactionPlanRequest.source.account = account_number
-        transactionPlanRequest = self.create_withdraw_order_plans(transactionPlanRequest)
+        transactionPlanRequest = self.create_withdraw_order_plans(account_number, transactionPlanRequest)
         if transactionPlanRequest != None:
             self.broadcast_transaction_plan(transactionPlanRequest)
 
@@ -205,7 +205,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
         logging.getLogger().info("2. Creating cancel order plan...")
         start_time = (time.time())
-        transactionPlanRequest = self.create_cancel_order_plans(transactionPlanRequest)
+        transactionPlanRequest = self.create_cancel_order_plans(account_number, transactionPlanRequest)
         print(f"TOTAL Time to plan cancelling of all orders: {(time.time()) - start_time}")
         if transactionPlanRequest == None:
             # Reset the request for the open step
@@ -244,7 +244,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         # High fee tier
         transactionPlanRequest.auto_fee.fee_tier = 3
         transactionPlanRequest.source.account = account_number
-        transactionPlanRequest = self.create_withdraw_order_plans(transactionPlanRequest)
+        transactionPlanRequest = self.create_withdraw_order_plans(account_number, transactionPlanRequest)
         logging.getLogger().info(f"TOTAL Time to plan withdrawing from all positions: {(time.time()) - start_time}")
         start_time = (time.time())
         logging.getLogger().info("Building and broadcasting withdraw plans...")
@@ -428,10 +428,10 @@ class PenumbraOsiris(ScriptStrategyBase):
                 logging.getLogger().info(f"Error processing (next) response: {e}")
                 return None
 
-    def create_cancel_order_plans(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
+    def create_cancel_order_plans(self, account_number, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
         start_time = (time.time())
         logging.getLogger().info("Creating cancel order plan...")
-        active_orders, _ = self.get_orders()
+        active_orders, _ = self.get_orders(account_number)
         logging.getLogger().info(f"Number of orders to close: (active) {len(active_orders)}")
         
         if len(active_orders) == 0:
@@ -446,7 +446,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 logging.getLogger().info(f"Adding order close: {order_key}")
                 # Add a the Position close directly
                 position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
-                position_close_bech32m.alt_bech32m = active_orders[order_key]['asset'].denom_metadata.display.split(LP_NFT_OPEN_PREFIX)[1]
+                position_close_bech32m.alt_bech32m = active_orders[order_key]['asset'].balance_view.known_asset_id.metadata.display.split(LP_NFT_OPEN_PREFIX)[1]
             except Exception as e:
                 logging.getLogger().error(f"Error adding positions to close: {str(e)}")
 
@@ -572,10 +572,10 @@ class PenumbraOsiris(ScriptStrategyBase):
         except Exception as e:
             logging.getLogger().error(f"Error making liquidity position: {str(e)}")
     
-    def create_withdraw_order_plans(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
+    def create_withdraw_order_plans(self, account_number, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
         start_time = (time.time())
         logging.getLogger().info("Creating withdraw order plan...")
-        _, closed_orders = self.get_orders()
+        _, closed_orders = self.get_orders(account_number)
         logging.getLogger().info(f"Number of orders to withdraw (already closed) {len(closed_orders)}")
         
         if len(closed_orders) == 0:
@@ -591,9 +591,9 @@ class PenumbraOsiris(ScriptStrategyBase):
         for order_key in all_order_keys:
             try:
                 # Get where current position is (active/closed) to figure out what prefix to use
-                #if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
+                #if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].balance_view.known_asset_id.metadata.display:
                 #    prefix = LP_NFT_OPEN_PREFIX
-                if LP_NFT_CLOSED_PREFIX in all_orders[order_key]['asset'].denom_metadata.display:
+                if LP_NFT_CLOSED_PREFIX in all_orders[order_key]['asset'].balance_view.known_asset_id.metadata.display:
                     prefix = LP_NFT_CLOSED_PREFIX
                 #if order_key in active_orders:
                 #    prefix = LP_NFT_OPEN_PREFIX
@@ -606,7 +606,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 # Set the Position directly
                 position_withdraw_bech32m = transactionPlanRequest.position_withdraws.add().position_id
                 # Always use the closed prefix for withdraws as they would be closed in the previous step
-                position_withdraw_bech32m.alt_bech32m = all_orders[order_key]['asset'].denom_metadata.display.split(prefix)[1] 
+                position_withdraw_bech32m.alt_bech32m = all_orders[order_key]['asset'].balance_view.known_asset_id.metadata.display.split(prefix)[1] 
 
                 # Set the remaining Reserves
                 transactionPlanRequest.position_withdraws[currentIndex].reserves.r1.lo = all_orders[order_key]['position'].reserves.r1.lo
@@ -715,12 +715,12 @@ class PenumbraOsiris(ScriptStrategyBase):
                 target=self._pclientd_url,
                 insecure=True)
 
-            if not denom_res.denom_metadata.denom_units:
+            if not denom_res.balance_view.known_asset_id.metadata.denom_units:
                 decimals = 0
             else:
-                decimals = denom_res.denom_metadata.denom_units[0].exponent
+                decimals = denom_res.balance_view.known_asset_id.metadata.denom_units[0].exponent
 
-            symbol = denom_res.denom_metadata.display
+            symbol = denom_res.balance_view.known_asset_id.metadata.display
             '''
             try:
                 token_address = base64.b64encode(bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode('utf-8')
@@ -821,26 +821,34 @@ class PenumbraOsiris(ScriptStrategyBase):
         df.sort_values(by=["Exchange", "Asset"], inplace=True)
         return df
 
-    def get_orders(self):
+    def get_orders(self, account_number):
+        # Create new grpc.Channel + client
         client = ViewService()
+        request = view_pb2.BalancesRequest()
+        request.account_filter.account = account_number
         query_client = DexQueryService()
 
-        # Get all the cleaned assets
-        assets_req = view_pb2.AssetsRequest()
-        assets_req.include_lp_nfts = True
-        assets = client.Assets(request=assets_req,target=self._pclientd_url,insecure=True)
-
+        # Get all the cleaned assets via Balances
+        # TODO: consider looping this into exisitng balances call, its super fast (milliseconds), so not a huge deal
+        responses = client.Balances(request=request,target=self._pclientd_url,insecure=True)
+        
         cleaned_assets = {}
-
-        for asset in assets:
-            # Only get assets with prefix 'lpnft_opened' or 'lpnft_closed'
-
-            denomDisplay = asset.denom_metadata.display
-
-            if str(denomDisplay).startswith(LP_NFT_OPEN_PREFIX) or str(denomDisplay).startswith(LP_NFT_CLOSED_PREFIX):
-                asset_id = base64.b64encode(bytes.fromhex(asset.denom_metadata.penumbra_asset_id.inner.hex()))
-                cleaned_assets[asset_id] = asset
-
+        
+        for response in responses:    
+            try: 
+                denomDisplay = response.balance_view.known_asset_id.metadata.display
+                
+                if str(denomDisplay).startswith(LP_NFT_OPEN_PREFIX) or str(denomDisplay).startswith(LP_NFT_CLOSED_PREFIX):
+                    asset_id = base64.b64encode(bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex()))
+                    cleaned_assets[asset_id] = response
+                
+            except Exception as e:
+                #print("Unkown asset balance found, disregarding...")
+                #logging.getLogger().error(f"Unkown asset balance found, disregarding... {str(e)}")
+                continue   
+        #logging.getLogger().info(f"Number of orders: {len(cleaned_assets)}")
+        #logging.getLogger().info(f"{cleaned_assets}")
+                 
         # Get all the notes
         notes_req = view_pb2.NotesRequest()
         notes_req.include_spent = False
@@ -859,16 +867,16 @@ class PenumbraOsiris(ScriptStrategyBase):
                 liq_request = dex_pb2.LiquidityPositionByIdRequest()
 
                 # get the current prefix
-                if str(cleaned_assets[id_byte_str].denom_metadata.display).startswith(LP_NFT_OPEN_PREFIX):
+                if str(cleaned_assets[id_byte_str].balance_view.known_asset_id.metadata.display).startswith(LP_NFT_OPEN_PREFIX):
                     current_prefix = LP_NFT_OPEN_PREFIX
-                elif str(cleaned_assets[id_byte_str].denom_metadata.display).startswith(LP_NFT_CLOSED_PREFIX):
+                elif str(cleaned_assets[id_byte_str].balance_view.known_asset_id.metadata.display).startswith(LP_NFT_CLOSED_PREFIX):
                     current_prefix = LP_NFT_CLOSED_PREFIX
                 else:
                     logging.getLogger().error(f"Prefix unsupported: {id_byte_str}")
                     raise ValueError(f"Prefix unsupported: {id_byte_str}")
 
                 liq_request.position_id.alt_bech32m = str(
-                    cleaned_assets[id_byte_str].denom_metadata.display).split(
+                    cleaned_assets[id_byte_str].balance_view.known_asset_id.metadata.display).split(
                         current_prefix)[1]
 
                 response = query_client.LiquidityPositionById(request=liq_request,target=self._pclientd_url,insecure=True)
@@ -892,14 +900,14 @@ class PenumbraOsiris(ScriptStrategyBase):
 
         return active_liq_positions, closed_liq_positions
 
-    def active_orders_df(self):
+    def active_orders_df(self, account_number):
         """
         Return a data frame of all active orders for displaying purpose.
         """
         columns = ["Exchange", "Market", "Status", "Reserves 1", "Reserves 2", "Price"]
         data = []
 
-        open_orders, closed_orders = self.get_orders()
+        open_orders, closed_orders = self.get_orders(account_number)
         all_orders = {**open_orders, **closed_orders}
         all_order_keys = list(all_orders.keys())
 
@@ -974,24 +982,31 @@ class PenumbraOsiris(ScriptStrategyBase):
         balance_df = self.get_balance_df(account_number=self.account_number_0)    
         
         # Add account to lines            
-        lines.extend(["", f"  Account {self.account_number_0} Balances:"] + [
+        lines.extend(["", f"  Account {self.account_number_0}:"] + ["    Balances:"] + [
             "    " + line
             for line in self.format_dataframe(balance_df).split("\n")
         ])
+        try:
+            df = self.active_orders_df(self.account_number_0)
+            lines.extend(["", "    Orders:"] + [
+                "    " + line for line in self.format_dataframe(df).split("\n")
+            ])
+        except ValueError:
+            lines.extend(["", "    No active maker orders."])
         
         # Repeat for account number 1 balances
         balance_df = self.get_balance_df(account_number=self.account_number_1)
-        lines.extend(["", f"  Account {self.account_number_1} Balances:"] + [
+        lines.extend(["", f"  Account {self.account_number_1}:"] + ["    Balances:"] + [
             "    " + line
             for line in self.format_dataframe(balance_df).split("\n")
         ])
         
         try:
-            df = self.active_orders_df()
-            lines.extend(["", "  Orders:"] + [
+            df = self.active_orders_df(self.account_number_1)
+            lines.extend(["", "    Orders:"] + [
                 "    " + line for line in self.format_dataframe(df).split("\n")
             ])
         except ValueError:
-            lines.extend(["", "  No active maker orders."])
+            lines.extend(["", "    No active maker orders."])
 
         return "\n".join(lines)
