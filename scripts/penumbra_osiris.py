@@ -83,6 +83,9 @@ class PenumbraOsiris(ScriptStrategyBase):
     # How the trading pair will be priced according to binance price feeds
     reference_pair = "ATOM-USDT"
     
+    # Should the bot wait for orders to be detected on chain before continuing (this is a blocking call, and will slow things down if so)
+    await_detection = False
+    
     # TODO: Set up bid/ask spread, order refresh time, order amount, etc.
     # -------------------------------------------------
     if _pclientd_url == None or len(_pclientd_url.split(":")) != 2:
@@ -92,7 +95,7 @@ class PenumbraOsiris(ScriptStrategyBase):
     
     #bid_spread = 0.001
     #ask_spread = 0.001
-    order_refresh_time = 60
+    order_refresh_time = 5 #! The average block time (5s) 
     #order_amount = 0.01
     create_timestamp = 0
     exchange = "penumbra"
@@ -134,7 +137,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         # Cancel all orders
         transactionPlanRequest = self.create_cancel_order_plans(account_number, transactionPlanRequest)
         if transactionPlanRequest != None:
-            self.broadcast_transaction_plan(transactionPlanRequest)
+            self.broadcast_transaction_plan(transactionPlanRequest, True)
         
         # Withdraw from all positions
         transactionPlanRequest = view_pb2.TransactionPlannerRequest()
@@ -143,7 +146,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         transactionPlanRequest.source.account = account_number
         transactionPlanRequest = self.create_withdraw_order_plans(account_number, transactionPlanRequest)
         if transactionPlanRequest != None:
-            self.broadcast_transaction_plan(transactionPlanRequest)
+            self.broadcast_transaction_plan(transactionPlanRequest, True)
 
     def on_tick(self, account_number_0: int = 0, account_number_1: int = 1):
         # Only run on tick if order_refresh_time is passed to not consume too many resources
@@ -222,7 +225,7 @@ class PenumbraOsiris(ScriptStrategyBase):
 
         start_time = (time.time())
         logging.getLogger().info("Building and broadcasting open/close plans...")
-        self.broadcast_transaction_plan(transactionPlanRequest)
+        self.broadcast_transaction_plan(transactionPlanRequest, self.await_detection)
         print(f"TOTAL Time to broadcast transaction plan: {(time.time()) - start_time}")
         withdraw_open_end_time = (time.time())
         
@@ -249,7 +252,7 @@ class PenumbraOsiris(ScriptStrategyBase):
         start_time = (time.time())
         logging.getLogger().info("Building and broadcasting close plans...")
         if transactionPlanRequest != None:
-            self.broadcast_transaction_plan(transactionPlanRequest)
+            self.broadcast_transaction_plan(transactionPlanRequest, self.await_detection)
         
             logging.getLogger().info(f"TOTAL Time to broadcast close transaction plan: {(time.time()) - start_time}")
             close_end_time = (time.time())
@@ -391,41 +394,51 @@ class PenumbraOsiris(ScriptStrategyBase):
                 return None
                 #time.sleep(1)
                 
-    def build_and_broadcast_tx(self, client, broadcast_request):
-        # Service will await detection on chain
-        broadcast_request.await_detection = True
+    def build_and_broadcast_tx(self, client, broadcast_request, await_detection):
+        # Will service await detection on chain
+        broadcast_request.await_detection = await_detection
 
         logging.getLogger().info("Creating tx, waiting for broadcast to return...")
         broadcast_response_iterator = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
         broadcast_resp = None
         
-        while True:
-            try:
-                # Fetch the next response from the iterator
-                broadcast_resp = next(broadcast_response_iterator)
+        if await_detection:
+            while True:
+                logging.getLogger().info("Awaiting detection on chain...")
+                try:
+                    # Fetch the next response from the iterator
+                    broadcast_resp = next(broadcast_response_iterator)
 
-                # Check which field is set in the oneof status
-                status_field = broadcast_resp.WhichOneof("status")
+                    # Check which field is set in the oneof status
+                    status_field = broadcast_resp.WhichOneof("status")
 
-                if status_field == "confirmed":
-                    return broadcast_resp.confirmed
-                elif status_field == "broadcast_success":
-                    print("Broadcasted, but awaiting confirmation...")
-                    logging.getLogger().info("Broadcasted, but awaiting confirmation...")
-                else:
-                    print("Unexpected response: ", broadcast_resp)
-                    logging.getLogger().info("Unexpected response: ", broadcast_resp)
+                    if status_field == "confirmed":
+                        return broadcast_resp.confirmed
+                    elif status_field == "broadcast_success":
+                        print("Broadcasted, but awaiting confirmation...")
+                        logging.getLogger().info("Broadcasted, but awaiting confirmation...")
+                    else:
+                        print("Unexpected response: ", broadcast_resp)
+                        logging.getLogger().info("Unexpected response: ", broadcast_resp)
+                        return None
+
+                except StopIteration:
+                    # Handle end of iterator (shouldn't happen if server is streaming)
+                    print("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
+                    logging.getLogger().info("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
+                    break
+                except Exception as e:
+                    print(f"Error processing response: {e}")
+                    logging.getLogger().info(f"Error processing response!")
+                    logging.getLogger().info(f"Error processing (next) response: {e}")
                     return None
-
-            except StopIteration:
-                # Handle end of iterator (shouldn't happen if server is streaming)
-                print("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
-                logging.getLogger().info("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
-                break
+        else: 
+            # If we're not awaiting detection, just return the broadcast response
+            try:
+                broadcast_resp = next(broadcast_response_iterator)
+                return broadcast_resp
             except Exception as e:
-                print(f"Error processing response: {e}")
-                logging.getLogger().info(f"Error processing response!")
-                logging.getLogger().info(f"Error processing (next) response: {e}")
+                logging.getLogger().error(f"Error processing response: {str(e)}")
                 return None
 
     def create_cancel_order_plans(self, account_number, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
@@ -626,7 +639,7 @@ class PenumbraOsiris(ScriptStrategyBase):
                 
         return transactionPlanRequest
         
-    def broadcast_transaction_plan(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
+    def broadcast_transaction_plan(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest, await_detection):
         try:
             client = ViewService()
             transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
@@ -646,19 +659,24 @@ class PenumbraOsiris(ScriptStrategyBase):
             tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
             
             print(f"Time to get auth, witness and build: {(time.time()) - start_time}")
+            logging.getLogger().info(f"Time to get auth, witness and build: {(time.time()) - start_time}")
             start_time = (time.time())
 
             # Broadcast
             logging.getLogger().info("Broadcasting transaction...")
             broadcast_request = view_pb2.BroadcastTransactionRequest()
             broadcast_request.transaction.CopyFrom(tx_to_broadcast)
-            broadcast_response = self.build_and_broadcast_tx(client, broadcast_request)
+            broadcast_response = self.build_and_broadcast_tx(client, broadcast_request, await_detection)
             
             if broadcast_response is None:
-                logging.getLogger().error("Error broadcasting transaction, check logs, attempting again next tick...")
-                return
-            
-            logging.getLogger().info(f"Order detected at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
+                    logging.getLogger().error("Error parsing broadcast transaction, check logs, attempting again next tick...")
+                    return
+                
+            if await_detection:
+                logging.getLogger().info(f"Order detected at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
+            else:
+                logging.getLogger().info(f"Broadcast success (not confirmed) w hash: {broadcast_response.broadcast_success.id.inner.hex()}")
+
             print(f"Time to get broadcast: {(time.time()) - start_time}")
             #breakpoint()
 
