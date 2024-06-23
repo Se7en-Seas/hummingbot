@@ -8,11 +8,11 @@ MAX_ORDER_ID_LEN = 32
 DOMAIN = EXCHANGE_NAME
 TESTNET_DOMAIN = "binance_perpetual_testnet"
 
-PERPETUAL_BASE_URL = "https://fapi.binance.com/fapi/"
-TESTNET_BASE_URL = "https://testnet.binancefuture.com/fapi/"
+PERPETUAL_BASE_URL = "https://fapi.binance.us/fapi/"
+TESTNET_BASE_URL = "https://testnet.binancefuture.us/fapi/"
 
-PERPETUAL_WS_URL = "wss://fstream.binance.com/"
-TESTNET_WS_URL = "wss://stream.binancefuture.com/"
+PERPETUAL_WS_URL = "wss://fstream.binance.us/"
+TESTNET_WS_URL = "wss://stream.binancefuture.us/"
 
 PUBLIC_WS_ENDPOINT = "stream"
 PRIVATE_WS_ENDPOINT = "ws"

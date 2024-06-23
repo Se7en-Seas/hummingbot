@@ -42,7 +42,7 @@ class BinanceRateSource(RateSourceBase):
 
     def _ensure_exchanges(self):
         if self._binance_exchange is None:
-            self._binance_exchange = self._build_binance_connector_without_private_keys(domain="com")
+            self._binance_exchange = self._build_binance_connector_without_private_keys(domain="us")
             self._binance_us_exchange = self._build_binance_connector_without_private_keys(domain="us")
 
     @staticmethod

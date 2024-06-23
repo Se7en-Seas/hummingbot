@@ -567,21 +567,23 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
         return self.c_cancel_order(self._market_info, order_id)
 
     cdef c_start(self, Clock clock, double timestamp):
-        StrategyBase.c_start(self, clock, timestamp)
-        self.update_from_config_map()
-        self._last_timestamp = timestamp
+        try:
+            StrategyBase.c_start(self, clock, timestamp)
+            self.update_from_config_map()
+            self._last_timestamp = timestamp
+            self._hanging_orders_tracker.register_events(self.active_markets)
 
-        self._hanging_orders_tracker.register_events(self.active_markets)
+            if self._hanging_orders_enabled:
+                # start tracking any restored limit order
+                restored_order_ids = self.c_track_restored_orders(self.market_info)
+                for order_id in restored_order_ids:
+                    order = next(o for o in self.market_info.market.limit_orders if o.client_order_id == order_id)
+                    if order:
+                        self._hanging_orders_tracker.add_as_hanging_order(order)
 
-        if self._hanging_orders_enabled:
-            # start tracking any restored limit order
-            restored_order_ids = self.c_track_restored_orders(self.market_info)
-            for order_id in restored_order_ids:
-                order = next(o for o in self.market_info.market.limit_orders if o.client_order_id == order_id)
-                if order:
-                    self._hanging_orders_tracker.add_as_hanging_order(order)
-
-        self._execution_state.time_left = self._execution_state.closing_time
+            self._execution_state.time_left = self._execution_state.closing_time
+        except Exception as e:
+            self.logger().error(str(e), exc_info=True)
 
     def start(self, clock: Clock, timestamp: float):
         self.c_start(clock, timestamp)
@@ -598,7 +600,6 @@ cdef class AvellanedaMarketMakingStrategy(StrategyBase):
             bint should_report_warnings = ((current_tick > last_tick) and
                                            (self._logging_options & self.OPTION_LOG_STATUS_REPORT))
             object proposal
-
         try:
             if not self._all_markets_ready:
                 self._all_markets_ready = all([mkt.ready for mkt in self._sb_markets])

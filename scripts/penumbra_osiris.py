@@ -1,0 +1,1031 @@
+import base64
+import logging
+import os
+import sys
+import time
+from decimal import Decimal
+from pprint import pprint
+from typing import Any, List
+
+import numpy as np
+import pandas as pd
+import requests
+
+from hummingbot.client.config.security import Security
+from hummingbot.connector.exchange.penumbra.penumbra_utils import KEYS
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1 import (
+    dex_pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.dex.v1.dex_pb2_grpc import (
+    QueryService as DexQueryService,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.shielded_pool.v1 import (
+    shielded_pool_pb2,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.component.shielded_pool.v1.shielded_pool_pb2_grpc import (
+    QueryService,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.core.keys.v1 import keys_pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.custody.v1 import custody_pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.custody.v1.custody_pb2_grpc import (
+    CustodyService,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1 import view_pb2
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.generated.penumbra.view.v1.view_pb2_grpc import (
+    ViewService,
+)
+from hummingbot.connector.gateway.clob_spot.data_sources.penumbra.penumbra_constants import (
+    TOKEN_ADDRESS_MAP,
+    TOKEN_SYMBOL_MAP,
+)
+from hummingbot.core.data_type.common import OrderType, TradeType
+from hummingbot.core.data_type.order_candidate import OrderCandidate
+from hummingbot.core.event.events import OrderFilledEvent
+from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
+
+LP_NFT_OPEN_PREFIX = 'lpnft_opened_'
+LP_NFT_CLOSED_PREFIX = 'lpnft_closed_'
+
+# TODO: Consider setting all manual fees to automatic fees instead (for fee_mode https://buf.build/penumbra-zone/penumbra/docs/main:penumbra.view.v1#penumbra.view.v1.TransactionPlannerRequest)
+
+# The original Osiris bot uses binance feeds, so we aim to do the same here
+# https://binance-docs.github.io/apidocs/spot/en/#market-data-endpoints
+class PenumbraOsiris(ScriptStrategyBase):
+    """
+    Adapted from SimplePMM strategy example
+    Video: -
+    Description:
+    The bot will place 1 order around at the midpoint between the bid-ask binances prices in a trading_pair. Every order_refresh_time in seconds,
+    the bot will cancel and replace the orders.
+    """
+    #! Note: Penumbra does not current support websocket connections, so the order book must be refreshed by force in each tick before execution logic can begin
+    
+    # ----------- Config knobs for the strategy ---------
+    # Account numbers to trade with, alternate state at blocks n vs n+1
+    account_number_0 = 0
+    account_number_1 = 1
+    
+    # Your penumbra pclientd url
+    # Secretes behave oddly if its the first run or not when set (they are not encrypted on first run, but are on subsequent runs)
+    try:
+        _pclientd_url = Security.secrets_manager.decrypt_secret_value('pclientd_url', KEYS.pclientd_url.get_secret_value())
+    except:
+        _pclientd_url = "localhost:8081"
+        
+    logging.getLogger().info(f"Using pclientd url: {_pclientd_url}")
+    
+    # Percentage of your balance to set as reserves to trade (0.1 = 10%)
+    reserves1_pct = 0.1
+    reserves2_pct = 0.1
+    
+    # The pair on penumbra to trade
+    trading_pair = "test_atom-test_usd"
+    # How the trading pair will be priced according to binance price feeds
+    reference_pair = "ATOM-USDT"
+    
+    # Should the bot wait for orders to be detected on chain before continuing (this is a blocking call, and will slow things down if so)
+    await_detection = False
+    
+    # TODO: Set up bid/ask spread, order refresh time, order amount, etc.
+    # -------------------------------------------------
+    if _pclientd_url == None or len(_pclientd_url.split(":")) != 2:
+        logging.getLogger().warn("pclientd url not set, assuming a default of localhost:8081 ...")
+        print("Remember to run \'connect penumbra\' to set up your connection metadata outside of the default.")
+        _pclientd_url = "localhost:8081"
+    
+    #bid_spread = 0.001
+    #ask_spread = 0.001
+    order_refresh_time = 5 #! The average block time (5s) 
+    #order_amount = 0.01
+    create_timestamp = 0
+    exchange = "penumbra"
+
+    markets = {exchange: {trading_pair}}
+    #_gateway_url = KEYS.gateway_url.get_secret_value()
+    current_block = 0 # Alternates between 0 and 1, showing if we're at block n or n+1, this essentially reverses the directions of which account is opening vs withdrawing
+    
+    print("Executing strategy...")
+
+    # Override to skip the ready check which depends on websocket connection
+    def tick(self, timestamp: float):
+        """
+        Clock tick entry point, is run every second (on normal tick setting).
+        Checks if all connectors are ready, if so the strategy is ready to trade.
+
+        :param timestamp: The current timestamp.
+        """
+        self.on_tick(self.account_number_0, self.account_number_1)
+    
+    # ! Implement graceful on stop behavior (cancel all orders, withdraw from all positions)    
+    def on_stop(self):
+        print("Stopping strategy...")
+        
+        print(f"Closing & withdrawing account {self.account_number_0}")
+        self.cancel_and_withdraw_all(self.account_number_0)
+        print(f"Closing & withdrawing account {self.account_number_1}")
+        self.cancel_and_withdraw_all(self.account_number_1)
+        
+        print("Strategy stopped.")
+    
+    def cancel_and_withdraw_all(self, account_number):
+        time.sleep(6) # Sleep for a block(ish) to prevent nullifier reuse issues
+        # Create new base request
+        transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+        # High fee tier
+        transactionPlanRequest.auto_fee.fee_tier = 3
+        transactionPlanRequest.source.account = account_number
+        
+        # Cancel all orders
+        transactionPlanRequest = self.create_cancel_order_plans(account_number, transactionPlanRequest)
+        if transactionPlanRequest != None:
+            self.broadcast_transaction_plan(transactionPlanRequest, True)
+        
+        # Withdraw from all positions
+        transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+        # High fee tier
+        transactionPlanRequest.auto_fee.fee_tier = 3
+        transactionPlanRequest.source.account = account_number
+        transactionPlanRequest = self.create_withdraw_order_plans(account_number, transactionPlanRequest)
+        if transactionPlanRequest != None:
+            self.broadcast_transaction_plan(transactionPlanRequest, True)
+
+    def on_tick(self, account_number_0: int = 0, account_number_1: int = 1):
+        # Only run on tick if order_refresh_time is passed to not consume too many resources
+        try: 
+            if self.create_timestamp <= self.current_timestamp - self.order_refresh_time:
+                total_loop_time = time.time()
+                
+                block = "N"
+                if self.current_block == 1:
+                    block = "N+1"
+                    
+                open_account = account_number_0
+                close_account = account_number_1
+                
+                if self.current_block == 1:
+                    open_account = account_number_1
+                    close_account = account_number_0
+                
+                logging.getLogger().info(f"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Refreshing order book at block {block} ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                
+                logging.getLogger().info(f"Block {block}: <><><> Processing opens/withdraws for account {open_account} <><><>")
+                self.open_withdraw_orders(open_account)
+                
+                logging.getLogger().info(f"Block {block}: <><><> Processing closes for account {close_account} <><><>")
+                self.close_orders(close_account)
+                
+                logging.getLogger().info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+                
+                self.create_timestamp = self.order_refresh_time + self.current_timestamp
+                # Print some summary metrics
+                print(
+                    f"~~~~~~~~~ TOTAL Time to refresh order book: {(time.time()) - total_loop_time} ~~~~~~~~~"
+                )
+                
+                if self.current_block == 0:
+                    self.current_block = 1
+                else:
+                    self.current_block = 0
+
+        except Exception as e:
+            logging.getLogger().error(f"Error on tick: {str(e)}")
+
+    def open_withdraw_orders(self, account_number):
+        start_time = (time.time())
+        price_feed_time = time.time()
+
+        logging.getLogger().info("1. Checking price feeds...")
+        bid_ask: List[float] = self.create_proposal()
+        print(f"TOTAL Time to get price feeds: {(time.time()) - start_time}")
+        logging.getLogger().info(f"<><><> Best bid: {bid_ask[0]} and ask: {bid_ask[1]} <><><>")
+        price_feed_end_time = (time.time())
+
+        withdraw_open_time = time.time()
+        # Create new base request
+        transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+        # High fee tier
+        transactionPlanRequest.auto_fee.fee_tier = 3
+        transactionPlanRequest.source.account = account_number
+
+        logging.getLogger().info("2. Creating withdraw order plan...")
+        start_time = (time.time())
+        transactionPlanRequest = self.create_withdraw_order_plans(account_number, transactionPlanRequest)
+        print(f"TOTAL Time to plan withdrawl from orders: {(time.time()) - start_time}")
+        if transactionPlanRequest == None:
+            # Reset the request for the open step
+            transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+            # High fee tier
+            transactionPlanRequest.auto_fee.fee_tier = 3
+            transactionPlanRequest.source.account = account_number
+        
+        start_time = (time.time())
+
+        logging.getLogger().info("3. Creating liquidity position transaction plan...")
+        transactionPlanRequest = self.create_lp_order_plans(transactionPlanRequest, bid_ask, account_number)
+        print(f"TOTAL Time to create liquidity position plan: {(time.time()) - start_time}")
+
+        start_time = (time.time())
+        logging.getLogger().info("Building and broadcasting open/close plans...")
+        self.broadcast_transaction_plan(transactionPlanRequest, self.await_detection)
+        print(f"TOTAL Time to broadcast transaction plan: {(time.time()) - start_time}")
+        withdraw_open_end_time = (time.time())
+        
+        print(
+            f"~~~~~~~~~ TOTAL Time to withdraw & open orders: {(withdraw_open_end_time - withdraw_open_time)} ~~~~~~~~~"
+        )
+        print(
+            f"~~~~~~~~~ TOTAL Time to get price feeds from binance: {(price_feed_end_time - price_feed_time)} ~~~~~~~~~"
+        )
+        logging.getLogger().info(f"TOTAL Time to withdraw & open orders: {(withdraw_open_end_time - withdraw_open_time)}")
+        logging.getLogger().info(f"TOTAL Time to get price feeds from binance: {(price_feed_end_time - price_feed_time)}")
+
+    def close_orders(self, account_number):
+        start_time = (time.time())
+        close_time = time.time()
+        logging.getLogger().info("4. Creating close order plan...")
+        # Create new base request
+        transactionPlanRequest = view_pb2.TransactionPlannerRequest()
+        # High fee tier
+        transactionPlanRequest.auto_fee.fee_tier = 3
+        transactionPlanRequest.source.account = account_number
+        transactionPlanRequest = self.create_cancel_order_plans(account_number, transactionPlanRequest)
+        logging.getLogger().info(f"TOTAL Time to plan close from all positions: {(time.time()) - start_time}")
+        start_time = (time.time())
+        logging.getLogger().info("Building and broadcasting close plans...")
+        if transactionPlanRequest != None:
+            self.broadcast_transaction_plan(transactionPlanRequest, self.await_detection)
+        
+            logging.getLogger().info(f"TOTAL Time to broadcast close transaction plan: {(time.time()) - start_time}")
+            close_end_time = (time.time())
+            print(
+                f"~~~~~~~~~ TOTAL Time to close positions: {(close_end_time - close_time)} ~~~~~~~~~"
+            )
+            logging.getLogger().info(f"TOTAL Time to close positions: {(close_end_time - close_time)}")
+        else:
+            logging.getLogger().info("No positions to close.")
+
+    def create_proposal(self) -> List[float]:
+        try:
+            bookTicker = requests.get(f"https://api.binance.us/api/v3/ticker/bookTicker?symbol={self.reference_pair.replace('-', '')}").json()
+            bid_price = bookTicker['bidPrice']
+            ask_price = bookTicker['askPrice']
+        except:
+            logging.getLogger().error("Error fetching bid/ask from binance, is your IP geolocked?")
+
+        return [Decimal(str(bid_price)), Decimal(str(ask_price))]
+
+
+    def clamp(self, value, min_value, max_value):
+        """Clamps a value between a minimum and maximum value."""
+        return max(min_value, min(value, max_value))
+
+    def calculate_pct_reserves(self, reserve1, reserve2, reserves1_pct, reserves2_pct):
+        """
+        Calculates the amount of reserves to use for trading based on the given percentages and clamps them to 80 bits.
+        :param reserve1: The first reserve value.
+        :param reserve2: The second reserve value.
+        :return: Tuple of reserve amounts (r1, r2).
+        """
+        max_80_bits = 2**80 - 1
+        r1 = self.clamp(int(reserve1 * Decimal(str(reserves1_pct))), 0, max_80_bits)
+        r2 = self.clamp(int(reserve2 * Decimal(str(reserves2_pct))), 0, max_80_bits)
+        
+        return [r1, r2]
+
+    def calculate_half_reserves(self, reserve1, reserve2):
+        """
+        Calculates half of the given reserves and clamps them to 80 bits.
+        :param reserve1: The first reserve value.
+        :param reserve2: The second reserve value.
+        :return: Tuple of clamped half reserves (r1, r2).
+        """
+
+        if reserve1 == None or reserve1 == 0:
+            logging.getLogger().error(
+                "Not enough r1 reserves available to open a position.")
+            raise ValueError("No reserves available to open a position.")
+        if reserve2 == None or reserve2 == 0:
+            logging.getLogger().error(
+                "Not enough r2 reserves available to open a position.")
+            raise ValueError("No reserves available to open a position.")
+
+        max_80_bits = 2**80 - 1
+        half_reserve1 = self.clamp(reserve1 // 2, 0, max_80_bits)
+        half_reserve2 = self.clamp(reserve2 // 2, 0, max_80_bits)
+
+        if half_reserve1 == 0 or half_reserve2 == 0:
+            logging.getLogger().error(
+                "Not enough reserves available to open a position.")
+            raise ValueError("No reserves available to open a position.")
+
+        return [half_reserve1, half_reserve2]
+
+    def int_to_lo_hi(self, value):
+        """
+        Converts a large integer into lo and hi parts for a 128-bit unsigned integer.
+        :param value: The integer to be converted.
+        :return: A tuple (lo, hi) representing the low and high parts of the integer.
+        """
+        # Ensure value fits in 128 bits
+        if value.bit_length() > 128:
+            raise ValueError("Value is too large to fit in 128 bits")
+
+        # Mask to extract 64 bits.
+        mask = (1 << 64) - 1
+
+        # Extract lo and hi values.
+        lo = value & mask
+        hi = (value >> 64) & mask
+
+        return [lo, hi]
+
+    def hi_low_to_human_readable(self, hi, lo, decimals):
+        return ((hi << 64) + lo) / (10**decimals)
+
+    def generate_nonce(self):
+        """Generate a 32-byte nonce."""
+        nonce_bytes = os.urandom(32)
+        return nonce_bytes
+
+    def authorize_tx(self, transaction):
+        auth_client = CustodyService()
+
+        auth_request = custody_pb2.AuthorizeRequest()
+        auth_request.plan.CopyFrom(transaction.plan)
+
+        auth_response = auth_client.Authorize(request=auth_request,target=self._pclientd_url,insecure=True)
+
+        return auth_response
+    
+    def witness_and_build_tx(self, client, wit_and_build_req):
+        wit_and_build_resp_iterator = client.WitnessAndBuild(request=wit_and_build_req,target=self._pclientd_url,insecure=True)
+        wit_and_build_resp = None
+        logging.getLogger().info("Witnessing and building tx, waiting for response...")
+        
+        while True:
+            try:
+                # Fetch the next response from the iterator
+                wit_and_build_resp = next(wit_and_build_resp_iterator)
+
+                # Check which field is set in the oneof status
+                status_field = wit_and_build_resp.WhichOneof("status")
+                logging.getLogger().info(f"Witness Status field: {status_field}")
+
+                if status_field == "complete":
+                    logging.getLogger().info("Witness complete!")
+                    return wit_and_build_resp.complete.transaction
+                elif status_field == "build_progress":
+                    logging.getLogger().info(f"Progress on build..{wit_and_build_resp.build_progress}")
+                    print(wit_and_build_resp.build_progress)
+                    print("Current progress: ", wit_and_build_resp.build_progress.progress)
+                else:
+                    print("Unexpected response: ", wit_and_build_resp)
+                    logging.getLogger().info("Unexpected response: ", wit_and_build_resp)
+                    return None
+
+            except StopIteration:
+                # Handle end of iterator (shouldn't happen if server is streaming)
+                print("Fatal error thrown, server disconnected prematurely during witness and build step.")
+                logging.getLogger().info("Fatal error thrown, server disconnected prematurely during witness and build step.")
+                break
+            except Exception as e:
+                print(f"Error processing response: {e}")
+                logging.getLogger().info(f"Error processing response!")
+                logging.getLogger().info(f"Error processing (next) response: {e}")
+                return None
+                #time.sleep(1)
+                
+    def build_and_broadcast_tx(self, client, broadcast_request, await_detection):
+        # Will service await detection on chain
+        broadcast_request.await_detection = await_detection
+
+        logging.getLogger().info("Creating tx, waiting for broadcast to return...")
+        broadcast_response_iterator = client.BroadcastTransaction(request=broadcast_request,target=self._pclientd_url,insecure=True, timeout=60)
+        broadcast_resp = None
+        
+        if await_detection:
+            while True:
+                logging.getLogger().info("Awaiting detection on chain...")
+                try:
+                    # Fetch the next response from the iterator
+                    broadcast_resp = next(broadcast_response_iterator)
+
+                    # Check which field is set in the oneof status
+                    status_field = broadcast_resp.WhichOneof("status")
+
+                    if status_field == "confirmed":
+                        return broadcast_resp.confirmed
+                    elif status_field == "broadcast_success":
+                        print("Broadcasted, but awaiting confirmation...")
+                        logging.getLogger().info("Broadcasted, but awaiting confirmation...")
+                    else:
+                        print("Unexpected response: ", broadcast_resp)
+                        logging.getLogger().info("Unexpected response: ", broadcast_resp)
+                        return None
+
+                except StopIteration:
+                    # Handle end of iterator (shouldn't happen if server is streaming)
+                    print("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
+                    logging.getLogger().info("Fatal error thrown, server disconnected prematurely during build and broadcast step.")
+                    break
+                except Exception as e:
+                    print(f"Error processing response: {e}")
+                    logging.getLogger().info(f"Error processing response!")
+                    logging.getLogger().info(f"Error processing (next) response: {e}")
+                    return None
+        else: 
+            # If we're not awaiting detection, just return the broadcast response
+            try:
+                broadcast_resp = next(broadcast_response_iterator)
+                return broadcast_resp
+            except Exception as e:
+                logging.getLogger().error(f"Error processing response: {str(e)}")
+                return None
+
+    def create_cancel_order_plans(self, account_number, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
+        start_time = (time.time())
+        logging.getLogger().info("Creating cancel order plan...")
+        active_orders, _ = self.get_orders(account_number)
+        logging.getLogger().info(f"Number of orders to close: (active) {len(active_orders)}")
+        
+        if len(active_orders) == 0:
+            logging.getLogger().info("No orders to cancel.")
+            return None
+        
+        # Iterate over dictionary keys
+        order_key_list = list(active_orders.keys())
+        
+        for order_key in order_key_list:
+            try:                
+                logging.getLogger().info(f"Adding order close: {order_key}")
+                # Add a the Position close directly
+                position_close_bech32m = transactionPlanRequest.position_closes.add().position_id
+                position_close_bech32m.alt_bech32m = active_orders[order_key]['asset'].balance_view.known_asset_id.metadata.display.split(LP_NFT_OPEN_PREFIX)[1]
+            except Exception as e:
+                logging.getLogger().error(f"Error adding positions to close: {str(e)}")
+
+        logging.getLogger().info(f"Time to create cancel order plan: {(time.time()) - start_time}")
+        
+        return transactionPlanRequest
+
+    # https://guide.penumbra.zone/main/pclientd/build_transaction.html
+    def create_lp_order_plans(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest, bid_ask: List[int], account_number: int = 0):
+        try:
+            start_time = (time.time())
+            logging.getLogger().info("Beginning liquidity position plan creation...")
+            
+            # Get asset ids from constants file
+            asset_1 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[0]]
+            asset_2 = TOKEN_SYMBOL_MAP[self.trading_pair.split('-')[1]]
+
+            if asset_1 is None:
+                logging.getLogger().error(
+                    f"Asset {self.trading_pair.split('-')[0]} not found in constants file"
+                )
+            if asset_2 is None:
+                logging.getLogger().error(
+                    f"Asset {self.trading_pair.split('-')[1]} not found in constants file"
+                )
+            # Asset1 must be < Asset2 according to their lexographic order on byte strings
+            # https://buf.build/penumbra-zone/penumbra/docs/db38dcb505fd43769a072925543bc500:penumbra.core.component.dex.v1#penumbra.core.component.dex.v1.TradingFunction
+            if asset_1['address'] > asset_2['address']:
+                tmp = asset_1
+                asset_1 = asset_2
+                asset_2 = tmp
+                
+            logging.getLogger().info(f"Assets configured...")
+            logging.getLogger().info("Planning transaction...")
+            
+            # Assuming you have values for fee, p, q, your_trading_pair, your_reserve1, your_reserve2, and your_nonce
+            # Set the TradingFunction directly
+            trading_function = transactionPlanRequest.position_opens.add().position.phi
+
+            midPrice = Decimal(bid_ask[0] + bid_ask[1]) / 2
+            
+            scaling_factor = Decimal('1000')
+            midPrice = midPrice * scaling_factor
+
+            while midPrice < 1:
+                scaling_factor = scaling_factor * 1000
+                midPrice = midPrice * 1000
+
+            # P is always scaling value
+            p_val = self.int_to_lo_hi(int(scaling_factor))
+
+            trading_function.component.p.lo = p_val[0]
+            trading_function.component.p.hi = p_val[1]
+
+            # Q needs to be adjusted for the decimal difference between the two assets
+            decimal_diff = abs(asset_2['decimals'] - asset_1['decimals'])
+            q_val = self.int_to_lo_hi(int(midPrice * 10**decimal_diff))
+
+            trading_function.component.q.lo = q_val[0]
+            trading_function.component.q.hi = q_val[1]
+
+            # Calculate spread:
+            difference = scaling_factor * abs(bid_ask[1] - bid_ask[0])
+                
+            fraction = difference / midPrice
+            # max of 50% fee, min of 100 bps (1%)
+            spread = fraction * 100 * 100
+            spread = max(100, min(spread, 5000))
+
+            trading_function.component.fee = int(spread)
+
+            trading_function.pair.asset_1.inner = base64.b64decode(
+                asset_1['address'])
+            trading_function.pair.asset_2.inner = base64.b64decode(
+                asset_2['address'])
+            
+            #print(f"Asset 1: {asset_1['address']}")
+            #print(f"Asset 2: {asset_2['address']}")
+
+            # Set the PositionState directly
+            # ! We're only ever opening one position at a time so we can assume the first position in the list
+            position_state = transactionPlanRequest.position_opens[0].position.state
+            position_state.state = 1
+
+            # Set the Reserves directly
+            reserves = transactionPlanRequest.position_opens[0].position.reserves
+
+            logging.getLogger().info("Getting palances for reserves...")
+            # TODO: really should be available balances
+            # Get all balances
+            b_time = (time.time())
+            balances = self.get_all_balances(account_number)
+            print(f"Sub query time to get balances: {(time.time()) - b_time}")
+
+            res1 = balances[asset_1["symbol"]]['amount'] * 10**balances[asset_1["symbol"]]['decimals']
+            res2 = balances[asset_2["symbol"]]['amount'] * 10**balances[asset_2["symbol"]]['decimals']
+
+            # reserve1_int, reserve2_int = self.calculate_half_reserves(res1, res2)
+            reserve1, reserve2 = self.calculate_pct_reserves(res1, res2, self.reserves1_pct, self.reserves2_pct)
+
+            reserve1 = self.int_to_lo_hi(int(reserve1))
+            reserve2 = self.int_to_lo_hi(int(reserve2))
+
+            reserves.r1.lo = reserve1[0]
+            reserves.r1.hi = reserve1[1]
+            reserves.r2.lo = reserve2[0]
+            reserves.r2.hi = reserve2[1]
+            
+            # Convert back to human readable and log just to sanity check
+            print(
+                f"Setting {asset_1['symbol']} in Reserve 1: {self.hi_low_to_human_readable(reserves.r1.hi, reserves.r1.lo, balances[asset_1['symbol']]['decimals'])}")
+            print(
+                f"Setting {asset_2['symbol']} Reserve 2: {self.hi_low_to_human_readable(reserves.r2.hi, reserves.r2.lo, balances[asset_2['symbol']]['decimals'])}")
+            
+            # Set other fields of Position
+            transactionPlanRequest.position_opens[0].position.close_on_fill = False
+            transactionPlanRequest.position_opens[0].position.nonce = self.generate_nonce()
+
+            print(f"Time to get LP transaction plan: {(time.time()) - start_time}")
+            logging.getLogger().info(f"Time to get LP transaction plan: {(time.time()) - start_time}")
+            
+            return transactionPlanRequest
+        except Exception as e:
+            logging.getLogger().error(f"Error making liquidity position: {str(e)}")
+    
+    def create_withdraw_order_plans(self, account_number, transactionPlanRequest: view_pb2.TransactionPlannerRequest):
+        start_time = (time.time())
+        logging.getLogger().info("Creating withdraw order plan...")
+        _, closed_orders = self.get_orders(account_number)
+        logging.getLogger().info(f"Number of orders to withdraw (already closed) {len(closed_orders)}")
+        
+        if len(closed_orders) == 0:
+            logging.getLogger().info("No orders to withdraw.")
+            return None
+        
+        # Add withdraw from positions, iterate over closed orders if there were any
+        all_orders = {**closed_orders}
+        all_order_keys = list(all_orders.keys())
+        currentIndex = 0
+        
+        logging.getLogger().info(f"Beginning to gather withdraw plans from {len(all_order_keys)} positions...")
+        for order_key in all_order_keys:
+            try:
+                # Get where current position is (active/closed) to figure out what prefix to use
+                #if LP_NFT_OPEN_PREFIX in all_orders[order_key]['asset'].balance_view.known_asset_id.metadata.display:
+                #    prefix = LP_NFT_OPEN_PREFIX
+                if LP_NFT_CLOSED_PREFIX in all_orders[order_key]['asset'].balance_view.known_asset_id.metadata.display:
+                    prefix = LP_NFT_CLOSED_PREFIX
+                #if order_key in active_orders:
+                #    prefix = LP_NFT_OPEN_PREFIX
+                #elif order_key in closed_orders:
+                #    prefix = LP_NFT_CLOSED_PREFIX
+                else:
+                    logging.Logger().error(f"Could not find prefix for order id: {order_key}, invalid")
+                    raise ValueError(f"Could not find prefix for order id: {order_key}, invalid")
+
+                # Set the Position directly
+                position_withdraw_bech32m = transactionPlanRequest.position_withdraws.add().position_id
+                # Always use the closed prefix for withdraws as they would be closed in the previous step
+                position_withdraw_bech32m.alt_bech32m = all_orders[order_key]['asset'].balance_view.known_asset_id.metadata.display.split(prefix)[1] 
+
+                # Set the remaining Reserves
+                transactionPlanRequest.position_withdraws[currentIndex].reserves.r1.lo = all_orders[order_key]['position'].reserves.r1.lo
+                transactionPlanRequest.position_withdraws[currentIndex].reserves.r1.hi = all_orders[order_key]['position'].reserves.r1.hi
+                transactionPlanRequest.position_withdraws[currentIndex].reserves.r2.lo = all_orders[order_key]['position'].reserves.r2.lo
+                transactionPlanRequest.position_withdraws[currentIndex].reserves.r2.hi = all_orders[order_key]['position'].reserves.r2.hi
+
+                # Set the trading pair
+                transactionPlanRequest.position_withdraws[currentIndex].trading_pair.asset_1.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_1.inner.hex())
+                transactionPlanRequest.position_withdraws[currentIndex].trading_pair.asset_2.inner = bytes.fromhex(all_orders[order_key]['position'].phi.pair.asset_2.inner.hex())
+                currentIndex += 1
+                logging.getLogger().info(f"Added withdraw from position: {order_key}")
+                
+                
+            except Exception as e:
+                logging.getLogger().error(f"Error adding withdraw from liquidity positions: {str(e)}")
+                
+        return transactionPlanRequest
+        
+    def broadcast_transaction_plan(self, transactionPlanRequest: view_pb2.TransactionPlannerRequest, await_detection):
+        try:
+            client = ViewService()
+            transactionPlanResponse = client.TransactionPlanner(request=transactionPlanRequest,target=self._pclientd_url,insecure=True)
+            
+            start_time = (time.time())
+
+            logging.getLogger().info("Authorizing transaction...")
+            # Authorize the tx
+            authorized_resp = self.authorize_tx(transactionPlanResponse)
+            
+            logging.getLogger().info(f"Witnessing and building transaction...")
+
+            # Witness & Build
+            wit_and_build_req = view_pb2.WitnessAndBuildRequest()
+            wit_and_build_req.transaction_plan.CopyFrom(transactionPlanResponse.plan)
+            wit_and_build_req.authorization_data.CopyFrom(authorized_resp.data)
+            tx_to_broadcast = self.witness_and_build_tx(client, wit_and_build_req)
+            
+            print(f"Time to get auth, witness and build: {(time.time()) - start_time}")
+            logging.getLogger().info(f"Time to get auth, witness and build: {(time.time()) - start_time}")
+            start_time = (time.time())
+
+            # Broadcast
+            logging.getLogger().info("Broadcasting transaction...")
+            broadcast_request = view_pb2.BroadcastTransactionRequest()
+            broadcast_request.transaction.CopyFrom(tx_to_broadcast)
+            broadcast_response = self.build_and_broadcast_tx(client, broadcast_request, await_detection)
+            
+            if broadcast_response is None:
+                    logging.getLogger().error("Error parsing broadcast transaction, check logs, attempting again next tick...")
+                    return
+                
+            if await_detection:
+                logging.getLogger().info(f"Order detected at block {broadcast_response.detection_height} in tx hash: {broadcast_response.id.inner.hex()}")
+            else:
+                logging.getLogger().info(f"Broadcast success (not confirmed) w hash: {broadcast_response.broadcast_success.id.inner.hex()}")
+
+            print(f"Time to get broadcast: {(time.time()) - start_time}")
+            #breakpoint()
+
+        except Exception as e:
+            logging.getLogger().error(f"Error broadcasting tx plan: {str(e)}")        
+
+    def did_fill_order(self, event: OrderFilledEvent):
+        msg = (f"{event.trade_type.name} {round(event.amount, 2)} {event.trading_pair} {self.exchange} at {round(event.price, 2)}")
+        self.log_with_clock(logging.INFO, msg)
+        self.notify_hb_app_with_timestamp(msg)
+
+    def get_all_balances(self, account_number: int = 0):
+        # Create new grpc.Channel + client
+        client = ViewService()
+        request = view_pb2.BalancesRequest()
+        request.account_filter.account = account_number
+        query_client = QueryService()
+        #logging.getLogger().info(f"BalanceRequest: {request}")
+        #logging.getLogger().info(f"Account number: {account_number}")
+
+        start_time = (time.time())
+        logging.getLogger().info("Getting all balances...")
+        responses = client.Balances(request=request,target=self._pclientd_url,insecure=True)
+        logging.getLogger().info(f"Time to get Balances: {(time.time()) - start_time}")
+        print(f"Time to get Balances: {(time.time()) - start_time}")
+        #logging.getLogger().info(f"Time to get Balances: {(time.time()) - start_time}")
+
+        balance_dict = {}
+
+        start_time = (time.time())
+        logging.getLogger().info("Formatting balances...")
+        for response in responses:    
+            try: 
+                balance = {
+                    "amount":
+                    response.balance_view.known_asset_id.amount,
+                    "asset_id":
+                        bytes.fromhex(
+                            response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())
+                }
+            except Exception as e:
+                #print("Unkown asset balance found, disregarding...")
+                #logging.getLogger().error(f"Unkown asset balance found, disregarding... {str(e)}")
+                continue
+
+            # ! You can query denoms directly but this makes things significantly slower (22+ seconds), use constants file for speed
+            '''
+            denom_req = shielded_pool_pb2.DenomMetadataByIdRequest()
+            denom_req.asset_id.inner = balance["asset_id"]
+
+            # Query for metadata from DenomMetadataById
+            denom_res = query_client.DenomMetadataById(
+                request=denom_req,
+                target=self._pclientd_url,
+                insecure=True)
+
+            if not denom_res.balance_view.known_asset_id.metadata.denom_units:
+                decimals = 0
+            else:
+                decimals = denom_res.balance_view.known_asset_id.metadata.denom_units[0].exponent
+
+            symbol = denom_res.balance_view.known_asset_id.metadata.display
+            '''
+            try:
+                token_address = base64.b64encode(bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode('utf-8')
+
+                if token_address not in TOKEN_ADDRESS_MAP:
+                    #print("Token not found in TOKEN_ADDRESS_MAP: ", token_address)
+                    #logging.getLogger().error(f"Token not found in TOKEN_ADDRESS_MAP: {token_address}")
+                    #! This will skip tokens not in the TOKEN_ADDRESS_MAP, so make sure your trading pair is in there
+                    continue
+            except Exception as e:
+                logging.getLogger().error(f"Could not serialize token address, disregarding... {str(e)}")
+                continue
+            
+            #logging.getLogger().info(f"Token found in TOKEN_ADDRESS_MAP: {token_address}")
+
+            try:
+                decimals = TOKEN_ADDRESS_MAP[token_address]['decimals']
+                symbol = TOKEN_ADDRESS_MAP[token_address]['symbol']
+            except Exception as e:
+                logging.getLogger().error(f"Could not find token in TOKEN_ADDRESS_MAP, disregarding... {str(e)}")
+                logging.getLogger().error(f"Token address map: {TOKEN_ADDRESS_MAP}")
+                logging.getLogger().error(f"Token address: {token_address}")
+
+            # amount's are uint 128 bit https://buf.build/penumbra-zone/penumbra/docs/300a488c79c9490d86cf09e1eceff593:penumbra.core.num.v1alpha1#penumbra.core.num.v1alpha1.Amount
+            #logging.getLogger().info(f"Raw Balance for {symbol}: hi{balance['amount'].hi} lo{balance['amount'].lo}")
+            balance = Decimal(str(self.hi_low_to_human_readable(response.balance_view.known_asset_id.amount.hi, response.balance_view.known_asset_id.amount.lo, decimals)))
+            #logging.getLogger().info(f"Formatted Balance for {symbol}: {balance}")
+
+            # If the asset is already in the balance dict, add the amount to it, otherwise create a new entry
+            if symbol in balance_dict:
+                balance_dict[symbol]['amount'] += balance
+            else:
+                balance_dict[symbol] = {
+                    "asset_id_str":
+                    base64.b64encode(
+                        bytes.fromhex(
+                            response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex())).decode(
+                                'utf-8'),
+                    "asset_id_bytes":
+                    bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex()),
+                    "amount":
+                    balance,
+                    "decimals":
+                    decimals,
+                }
+            #logging.getLogger().info(f"Running balance dict: {balance_dict[symbol]}")
+        print(f"Time to query all denoms & process data: {(time.time()) - start_time}")
+        logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
+        #logging.getLogger().info(f"Time to query all denoms & process data: {(time.time()) - start_time}")
+
+        '''
+        example return: 
+        {
+            'test_usd': {'amount': 7.952016459889115,
+                         'asset_id_bytes': b'\xad\xeb\xa6\xef\x04&\x93\xfa0\x82\xf1\x8c'
+                                b'X\xc6g\xff\xa4E=]\xb8\xcc\x82\xaa'
+                                b'\xddn\x88\x9f\xf5\xb0f\x08',
+                        'asset_id_str': 'reum7wQmk/owgvGMWMZn/6RFPV24zIKq3W6In/WwZgg='}
+                    }
+        }
+        '''
+        print("Final Balances: ")
+        logging.getLogger().info("Final Balances: ")
+        for key in balance_dict:
+            print(key, str(balance_dict[key]['amount']))
+            logging.getLogger().info(f"{key}: {str(balance_dict[key]['amount'])}")
+            
+        #pprint(balance_dict)
+        #logging.getLogger().info(balance_dict)
+        return balance_dict
+
+    def get_balance_df(self, account_number):
+        """
+        Returns a data frame for all asset balances for displaying purpose.
+        """
+        columns: List[str] = [
+            "Exchange", "Asset", "Available Balance"
+        ]
+        data: List[Any] = []
+
+        #! Get all balances first
+        all_balances = self.get_all_balances(account_number=account_number)
+
+        for asset in self.trading_pair.split('-'):
+            balance = 0
+            if asset in all_balances:
+                balance = all_balances[asset]['amount']
+
+            data.append([
+                self.exchange,
+                asset,
+                float(balance),
+            ])
+
+        df = pd.DataFrame(data=data, columns=columns).replace(np.nan,
+                                                              '',
+                                                              regex=True)
+        df.sort_values(by=["Exchange", "Asset"], inplace=True)
+        return df
+
+    def get_orders(self, account_number):
+        # Create new grpc.Channel + client
+        client = ViewService()
+        request = view_pb2.BalancesRequest()
+        request.account_filter.account = account_number
+        query_client = DexQueryService()
+
+        # Get all the cleaned assets via Balances
+        # TODO: consider looping this into exisitng balances call, its super fast (milliseconds), so not a huge deal
+        responses = client.Balances(request=request,target=self._pclientd_url,insecure=True)
+        
+        cleaned_assets = {}
+        
+        for response in responses:    
+            try: 
+                denomDisplay = response.balance_view.known_asset_id.metadata.display
+                
+                if str(denomDisplay).startswith(LP_NFT_OPEN_PREFIX) or str(denomDisplay).startswith(LP_NFT_CLOSED_PREFIX):
+                    asset_id = base64.b64encode(bytes.fromhex(response.balance_view.known_asset_id.metadata.penumbra_asset_id.inner.hex()))
+                    cleaned_assets[asset_id] = response
+                
+            except Exception as e:
+                #print("Unkown asset balance found, disregarding...")
+                #logging.getLogger().error(f"Unkown asset balance found, disregarding... {str(e)}")
+                continue   
+        #logging.getLogger().info(f"Number of orders: {len(cleaned_assets)}")
+        #logging.getLogger().info(f"{cleaned_assets}")
+                 
+        # Get all the notes
+        notes_req = view_pb2.NotesRequest()
+        notes_req.include_spent = False
+
+        notes_resp = client.Notes(request=notes_req,target=self._pclientd_url,insecure=True)
+
+        active_liq_positions = {}
+        closed_liq_positions = {}
+
+        for note in notes_resp:
+            id_byte_str =  base64.b64encode(bytes.fromhex(note.note_record.note.value.asset_id.inner.hex()))
+
+            # Associate the note with it's relevant asset in cleaned_assets by matching on penumbra_asset_id.inner & id_str
+            if id_byte_str in cleaned_assets:
+                # Get Position Data
+                liq_request = dex_pb2.LiquidityPositionByIdRequest()
+
+                # get the current prefix
+                if str(cleaned_assets[id_byte_str].balance_view.known_asset_id.metadata.display).startswith(LP_NFT_OPEN_PREFIX):
+                    current_prefix = LP_NFT_OPEN_PREFIX
+                elif str(cleaned_assets[id_byte_str].balance_view.known_asset_id.metadata.display).startswith(LP_NFT_CLOSED_PREFIX):
+                    current_prefix = LP_NFT_CLOSED_PREFIX
+                else:
+                    logging.getLogger().error(f"Prefix unsupported: {id_byte_str}")
+                    raise ValueError(f"Prefix unsupported: {id_byte_str}")
+
+                liq_request.position_id.alt_bech32m = str(
+                    cleaned_assets[id_byte_str].balance_view.known_asset_id.metadata.display).split(
+                        current_prefix)[1]
+
+                response = query_client.LiquidityPositionById(request=liq_request,target=self._pclientd_url,insecure=True)
+
+                position = response.data
+
+                # Only add to list if position is open
+                if position.state.state == 1:
+                    active_liq_positions[id_byte_str] = {
+                        'note': note,
+                        'asset': cleaned_assets[id_byte_str],
+                        'position': response.data
+                    }
+                elif position.state.state == 2:
+                    closed_liq_positions[id_byte_str] = {
+                        'note': note,
+                        'asset': cleaned_assets[id_byte_str],
+                        'position': response.data
+                    }
+        #print("Active positions: ", active_liq_positions)
+
+        return active_liq_positions, closed_liq_positions
+
+    def active_orders_df(self, account_number):
+        """
+        Return a data frame of all active orders for displaying purpose.
+        """
+        columns = ["Exchange", "Market", "Status", "Reserves 1", "Reserves 2", "Price"]
+        data = []
+
+        open_orders, closed_orders = self.get_orders(account_number)
+        all_orders = {**open_orders, **closed_orders}
+        all_order_keys = list(all_orders.keys())
+
+        for order_key in all_order_keys:
+            order = all_orders[order_key]
+
+            state = "Unknown"
+
+            if order['position'].state.state == 1:
+                state = "Open"
+            elif order['position'].state.state == 2:
+                state = "Closed"
+
+            # Get decimals from const
+            r1_address = base64.b64encode(bytes.fromhex(order['position'].phi.pair.asset_1.inner.hex())).decode('utf-8')
+            r1_decimals = TOKEN_ADDRESS_MAP[r1_address]['decimals']
+            reserves_1_num = self.hi_low_to_human_readable(
+                order['position'].reserves.r1.hi,
+                order['position'].reserves.r1.lo, r1_decimals)
+
+            r2_address = base64.b64encode(bytes.fromhex(order['position'].phi.pair.asset_2.inner.hex())).decode('utf-8')
+            r2_decimals = TOKEN_ADDRESS_MAP[r2_address]['decimals']
+
+            reserves_2_num = self.hi_low_to_human_readable(
+                order['position'].reserves.r2.hi,
+                order['position'].reserves.r2.lo, r2_decimals)
+
+            p_human = self.hi_low_to_human_readable(
+                order['position'].phi.component.q.hi,
+                order['position'].phi.component.q.lo, r1_decimals)
+            q_human = self.hi_low_to_human_readable(
+                order['position'].phi.component.p.hi,
+                order['position'].phi.component.p.lo, r2_decimals)
+            
+            # Truncate to 2 decimal places
+            price_human = round(p_human / q_human, 2)
+
+            data.append([
+                self.exchange,
+                self.trading_pair,
+                state,
+                str(round(float(reserves_1_num),2)) + ' ' + TOKEN_ADDRESS_MAP[r1_address]['symbol'],
+                str(round(float(reserves_2_num),2)) + ' ' + TOKEN_ADDRESS_MAP[r2_address]['symbol'],
+                f"{price_human} {TOKEN_ADDRESS_MAP[r1_address]['symbol']}/{TOKEN_ADDRESS_MAP[r2_address]['symbol']}"
+            ])
+
+        if not data:
+            raise ValueError
+
+        df = pd.DataFrame(data=data, columns=columns)
+        df.sort_values(by=["Exchange", "Market", "Status"], inplace=True)
+        return df
+
+    def format_dataframe(self, df: pd.DataFrame, padding: int = 3) -> str:
+        # Find the maximum width for each column and add extra padding
+        max_widths = {col: max(df[col].astype(str).apply(len).max(), len(col)) + padding
+                      for col in df.columns}
+
+        # Create a formatter for each column that right-aligns the text with the added padding
+        formatters = {col: lambda x, w=max_widths[col]: f"{x: >{w}}"
+                      for col in df.columns}
+
+        # Convert DataFrame to string using the custom formatters
+        return df.to_string(index=False, formatters=formatters)
+
+    def format_status(self) -> str:
+        lines = []
+        # Assume this method exists and fetches some warning lines
+        # warning_lines.extend(self.network_warning(self.get_market_trading_pair_tuples()))
+
+        # Get balances for both account numbers
+        balance_df = self.get_balance_df(account_number=self.account_number_0)    
+        
+        # Add account to lines            
+        lines.extend(["", f"  Account {self.account_number_0}:"] + ["    Balances:"] + [
+            "    " + line
+            for line in self.format_dataframe(balance_df).split("\n")
+        ])
+        try:
+            df = self.active_orders_df(self.account_number_0)
+            lines.extend(["", "    Orders:"] + [
+                "    " + line for line in self.format_dataframe(df).split("\n")
+            ])
+        except ValueError:
+            lines.extend(["", "    No active maker orders."])
+        
+        # Repeat for account number 1 balances
+        balance_df = self.get_balance_df(account_number=self.account_number_1)
+        lines.extend(["", f"  Account {self.account_number_1}:"] + ["    Balances:"] + [
+            "    " + line
+            for line in self.format_dataframe(balance_df).split("\n")
+        ])
+        
+        try:
+            df = self.active_orders_df(self.account_number_1)
+            lines.extend(["", "    Orders:"] + [
+                "    " + line for line in self.format_dataframe(df).split("\n")
+            ])
+        except ValueError:
+            lines.extend(["", "    No active maker orders."])
+
+        return "\n".join(lines)
